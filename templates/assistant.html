@@ -1,0 +1,230 @@
+{% extends "base.html" %}
+{% block title %}सहायक — PathWise India{% endblock %}
+{% block content %}
+<div class="max-w-2xl mx-auto px-4 sm:px-6 py-6 sm:py-10">
+  <div class="flex items-start justify-between gap-4 mb-6">
+    <div>
+      <span class="badge bg-brand-100 text-brand-700 mb-3">करियर और स्कॉलरशिप सहायक</span>
+      <h1 class="text-2xl sm:text-3xl font-extrabold">PathWise से पूछें</h1>
+      <p class="text-slate-600 mt-1 text-sm">यह आपसे कुछ सवाल पूछेगा, फिर आपके लिए PathWise के असली करियर और स्कॉलरशिप डेटा में खोजेगा।</p>
+    </div>
+    <form method="POST" action="{{ url_for('assistant_reset') }}">
+      <button type="submit" class="tap px-3 py-2 rounded-lg bg-white border border-slate-300 text-xs font-semibold text-slate-600 active:border-brand-400">चैट रीसेट करें</button>
+    </form>
+  </div>
+
+  <div id="chat-log" class="bg-white border border-slate-200 rounded-2xl p-4 sm:p-5 shadow-sm space-y-4 mb-4 min-h-[16rem] max-h-[28rem] overflow-y-auto">
+    {% if not history %}
+    <div class="text-sm text-slate-500">
+      नमस्ते{% if current_user %} {{ current_user.name.split(' ')[0] }}{% endif %}! आपको कौन-से विषय या काम पसंद हैं, बताइए — मैं आपके लिए सही करियर और स्कॉलरशिप ढूंढने में मदद करूँगा। आप टाइप कर सकते हैं या माइक दबाकर बोल भी सकते हैं।
+    </div>
+    {% endif %}
+    {% for m in history %}
+      {% if m.role == 'user' %}
+      <div class="flex justify-end">
+        <div class="bg-brand-600 text-white rounded-2xl rounded-br-sm px-4 py-2.5 text-sm max-w-[85%]">{{ m.content }}</div>
+      </div>
+      {% elif m.role == 'assistant' and m.content %}
+      <div class="flex justify-start">
+        <div class="bg-slate-100 text-ink rounded-2xl rounded-bl-sm px-4 py-2.5 text-sm max-w-[85%] whitespace-pre-wrap">{{ m.content }}</div>
+      </div>
+      {% endif %}
+    {% endfor %}
+  </div>
+
+  <div id="chat-cards" class="space-y-2 mb-4"></div>
+
+  <div id="voice-status" class="hidden text-xs text-brand-700 font-semibold mb-2 flex items-center gap-1.5">
+    <span class="w-2 h-2 rounded-full bg-brand-600 animate-pulse"></span>
+    <span id="voice-status-text">सुन रहा हूँ...</span>
+  </div>
+
+  <form id="chat-form" class="flex gap-2">
+    <input id="chat-input" type="text" autocomplete="off" placeholder="जैसे: मुझे जीव विज्ञान पसंद है और मैं लोगों की मदद करना चाहता/चाहती हूँ"
+      class="flex-1 rounded-xl border border-slate-300 px-3.5 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500">
+    <button type="button" id="mic-btn" title="बोलकर लिखें" class="tap px-3.5 py-3 rounded-xl bg-white border border-slate-300 text-slate-600 active:border-brand-400">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-5 h-5">
+        <path d="M12 15a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3Z"/>
+        <path d="M19 11a1 1 0 1 0-2 0 5 5 0 0 1-10 0 1 1 0 1 0-2 0 7 7 0 0 0 6 6.93V20H9a1 1 0 1 0 0 2h6a1 1 0 1 0 0-2h-2v-2.07A7 7 0 0 0 19 11Z"/>
+      </svg>
+    </button>
+    <button type="button" id="speaker-btn" title="जवाब बोलकर सुनाएं" aria-pressed="false" class="tap px-3.5 py-3 rounded-xl bg-white border border-slate-300 text-slate-600 active:border-brand-400">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-5 h-5">
+        <path d="M4 9v6h4l5 5V4L8 9H4Z"/>
+        <path d="M16.5 12a4.5 4.5 0 0 0-2-3.74 1 1 0 1 0-1.1 1.67A2.5 2.5 0 0 1 14.5 12a2.5 2.5 0 0 1-1.1 2.07 1 1 0 1 0 1.1 1.67A4.5 4.5 0 0 0 16.5 12Z"/>
+      </svg>
+    </button>
+    <button type="submit" id="chat-send" class="tap px-4 py-3 rounded-xl bg-brand-600 text-white text-sm font-semibold active:bg-brand-700">भेजें</button>
+  </form>
+</div>
+
+<script>
+(function () {
+  const log = document.getElementById('chat-log');
+  const cardsEl = document.getElementById('chat-cards');
+  const form = document.getElementById('chat-form');
+  const input = document.getElementById('chat-input');
+  const sendBtn = document.getElementById('chat-send');
+  const micBtn = document.getElementById('mic-btn');
+  const speakerBtn = document.getElementById('speaker-btn');
+  const voiceStatus = document.getElementById('voice-status');
+  const voiceStatusText = document.getElementById('voice-status-text');
+
+  const HINDI_LANG = 'hi-IN';
+
+  function addBubble(role, text) {
+    const wrap = document.createElement('div');
+    wrap.className = 'flex ' + (role === 'user' ? 'justify-end' : 'justify-start');
+    const bubble = document.createElement('div');
+    bubble.className = (role === 'user'
+      ? 'bg-brand-600 text-white rounded-2xl rounded-br-sm'
+      : 'bg-slate-100 text-ink rounded-2xl rounded-bl-sm') + ' px-4 py-2.5 text-sm max-w-[85%] whitespace-pre-wrap';
+    bubble.textContent = text;
+    wrap.appendChild(bubble);
+    log.appendChild(wrap);
+    log.scrollTop = log.scrollHeight;
+  }
+
+  function renderCards(cards) {
+    cardsEl.innerHTML = '';
+    (cards || []).forEach(function (c) {
+      const a = document.createElement('a');
+      a.className = 'tap block bg-white border border-slate-200 rounded-xl p-3 shadow-sm active:border-brand-400 text-sm';
+      if (c.type === 'career') {
+        a.href = '/careers/' + encodeURIComponent(c.slug);
+        a.innerHTML = '<div class="font-semibold">' + c.name + '</div><div class="text-xs text-slate-500">' + (c.cluster || '') + ' &middot; ' + (c.demand || '') + ' डिमांड</div>';
+      } else {
+        a.href = '/scholarships/' + encodeURIComponent(c.id);
+        a.innerHTML = '<div class="font-semibold">' + c.name + '</div><div class="text-xs text-slate-500">' + (c.provider || '') + (c.deadline ? ' &middot; ' + c.deadline + ' तक' : '') + '</div>';
+      }
+      cardsEl.appendChild(a);
+    });
+  }
+
+  // ---- Text-to-speech (assistant replies read aloud in Hindi) ----
+  const synth = window.speechSynthesis;
+  let speakEnabled = false;
+
+  function pickHindiVoice() {
+    if (!synth) return null;
+    const voices = synth.getVoices();
+    return voices.find(function (v) { return v.lang === HINDI_LANG; })
+      || voices.find(function (v) { return v.lang && v.lang.toLowerCase().startsWith('hi'); })
+      || null;
+  }
+
+  function speak(text) {
+    if (!speakEnabled || !synth || !text) return;
+    synth.cancel();
+    const utter = new SpeechSynthesisUtterance(text);
+    utter.lang = HINDI_LANG;
+    const voice = pickHindiVoice();
+    if (voice) utter.voice = voice;
+    synth.speak(utter);
+  }
+
+  if (!synth) {
+    speakerBtn.disabled = true;
+    speakerBtn.title = 'इस ब्राउज़र में आवाज़ में जवाब उपलब्ध नहीं है';
+    speakerBtn.classList.add('opacity-40');
+  } else {
+    speakerBtn.addEventListener('click', function () {
+      speakEnabled = !speakEnabled;
+      speakerBtn.setAttribute('aria-pressed', String(speakEnabled));
+      speakerBtn.classList.toggle('bg-brand-600', speakEnabled);
+      speakerBtn.classList.toggle('text-white', speakEnabled);
+      speakerBtn.classList.toggle('border-brand-600', speakEnabled);
+      if (!speakEnabled) synth.cancel();
+    });
+  }
+
+  // ---- Speech-to-text (mic button fills the input with Hindi speech) ----
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  let recognition = null;
+  let listening = false;
+
+  if (!SpeechRecognition) {
+    micBtn.disabled = true;
+    micBtn.title = 'इस ब्राउज़र में बोलकर लिखने की सुविधा उपलब्ध नहीं है';
+    micBtn.classList.add('opacity-40');
+  } else {
+    recognition = new SpeechRecognition();
+    recognition.lang = HINDI_LANG;
+    recognition.interimResults = false;
+    recognition.maxAlternatives = 1;
+
+    recognition.addEventListener('start', function () {
+      listening = true;
+      micBtn.classList.add('bg-brand-600', 'text-white', 'border-brand-600');
+      voiceStatus.classList.remove('hidden');
+      voiceStatusText.textContent = 'सुन रहा हूँ...';
+    });
+
+    recognition.addEventListener('result', function (e) {
+      const transcript = e.results[0][0].transcript;
+      input.value = transcript;
+      voiceStatusText.textContent = 'मिल गया: ' + transcript;
+    });
+
+    recognition.addEventListener('error', function () {
+      voiceStatusText.textContent = 'सुनने में समस्या हुई, फिर से कोशिश करें।';
+    });
+
+    recognition.addEventListener('end', function () {
+      listening = false;
+      micBtn.classList.remove('bg-brand-600', 'text-white', 'border-brand-600');
+      setTimeout(function () { voiceStatus.classList.add('hidden'); }, 1200);
+      if (input.value.trim()) input.focus();
+    });
+
+    micBtn.addEventListener('click', function () {
+      if (listening) {
+        recognition.stop();
+      } else {
+        input.value = '';
+        recognition.start();
+      }
+    });
+  }
+
+  form.addEventListener('submit', async function (e) {
+    e.preventDefault();
+    const message = input.value.trim();
+    if (!message) return;
+
+    addBubble('user', message);
+    input.value = '';
+    input.disabled = true;
+    sendBtn.disabled = true;
+    sendBtn.textContent = '...';
+
+    try {
+      const res = await fetch('{{ url_for("assistant_message") }}', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: message }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        const errText = data.error || 'कुछ गड़बड़ हो गई। कृपया फिर से कोशिश करें।';
+        addBubble('assistant', errText);
+        speak(errText);
+      } else {
+        addBubble('assistant', data.reply);
+        renderCards(data.cards);
+        speak(data.reply);
+      }
+    } catch (err) {
+      const errText = 'नेटवर्क में समस्या — कृपया फिर से कोशिश करें।';
+      addBubble('assistant', errText);
+      speak(errText);
+    } finally {
+      input.disabled = false;
+      sendBtn.disabled = false;
+      sendBtn.textContent = 'भेजें';
+      input.focus();
+    }
+  });
+})();
+</script>
+{% endblock %}

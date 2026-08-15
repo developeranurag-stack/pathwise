@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}Admin · Careers — PathWise India{% endblock %}
+{% block content %}
+<div class="max-w-5xl mx-auto px-4 sm:px-6 py-10">
+  <div class="flex items-center justify-between mb-6">
+    <h1 class="text-3xl font-extrabold">Careers</h1>
+    <a href="{{ url_for('admin_career_new') }}" class="tap px-4 py-2 rounded-lg bg-brand-600 text-white text-sm font-semibold shadow-sm">+ Add career</a>
+  </div>
+
+  <div class="grid gap-3">
+    {% for c in careers %}
+    <div class="bg-white border border-slate-200 rounded-2xl p-4 flex items-center justify-between gap-3">
+      <div>
+        <p class="font-bold">{{ c.name }}</p>
+        <p class="text-sm text-slate-500">{{ c.cluster }} &middot; {{ c.slug }}</p>
+        <span class="badge {% if c.source == 'manual' %}bg-slate-100 text-slate-600{% else %}bg-brand-100 text-brand-700{% endif %} mt-1">{{ c.source }}</span>
+      </div>
+      <div class="flex gap-2 shrink-0">
+        <a href="{{ url_for('admin_career_edit', career_id=c.career_id) }}" class="tap px-3 py-1.5 rounded-lg border border-slate-300 text-sm font-semibold text-slate-700">Edit</a>
+        <form method="POST" action="{{ url_for('admin_career_delete', career_id=c.career_id) }}" onsubmit="return confirm('Delete this career?');">
+          <button type="submit" class="tap px-3 py-1.5 rounded-lg border border-red-300 text-sm font-semibold text-red-700">Delete</button>
+        </form>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% if not careers %}
+  <p class="text-slate-500 text-center py-12">No careers yet.</p>
+  {% endif %}
+</div>
+{% endblock %}

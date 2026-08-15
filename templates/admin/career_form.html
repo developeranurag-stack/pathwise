@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% block title %}{{ 'Edit' if career else 'Add' }} career — PathWise India{% endblock %}
+{% block content %}
+<div class="max-w-2xl mx-auto px-4 sm:px-6 py-10">
+  <h1 class="text-2xl font-extrabold mb-6">{{ 'Edit' if career else 'Add' }} career</h1>
+  <form method="POST" class="space-y-4 bg-white border border-slate-200 rounded-2xl p-6">
+    <div>
+      <label class="block text-sm font-semibold mb-1">Name</label>
+      <input name="name" required value="{{ career.name if career else '' }}" class="w-full rounded-lg border border-slate-300 px-3 py-2">
+    </div>
+    <div>
+      <label class="block text-sm font-semibold mb-1">Slug (used in the URL, e.g. software-engineer)</label>
+      <input name="slug" required value="{{ career.slug if career else '' }}" class="w-full rounded-lg border border-slate-300 px-3 py-2">
+    </div>
+    <div>
+      <label class="block text-sm font-semibold mb-1">Interest cluster</label>
+      <select name="cluster" class="w-full rounded-lg border border-slate-300 px-3 py-2">
+        {% for key, label in clusters %}
+        <option value="{{ key }}" {% if career and career.cluster == key %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+      <p class="text-xs text-slate-500 mt-1">Students see this career recommended when this cluster matches their onboarding interests.</p>
+    </div>
+    <div>
+      <label class="block text-sm font-semibold mb-1">Description</label>
+      <textarea name="description" rows="3" class="w-full rounded-lg border border-slate-300 px-3 py-2">{{ career.description if career else '' }}</textarea>
+    </div>
+    <div class="grid grid-cols-2 gap-4">
+      <div>
+        <label class="block text-sm font-semibold mb-1">Demand</label>
+        <select name="demand" class="w-full rounded-lg border border-slate-300 px-3 py-2">
+          {% for level in ['Very High', 'High', 'Medium', 'Low'] %}
+          <option value="{{ level }}" {% if career and career.demand == level %}selected{% endif %}>{{ level }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div></div>
+      <div>
+        <label class="block text-sm font-semibold mb-1">Salary min (₹/yr)</label>
+        <input type="number" name="salary_min" value="{{ career.salary_min if career else '' }}" class="w-full rounded-lg border border-slate-300 px-3 py-2">
+      </div>
+      <div>
+        <label class="block text-sm font-semibold mb-1">Salary max (₹/yr)</label>
+        <input type="number" name="salary_max" value="{{ career.salary_max if career else '' }}" class="w-full rounded-lg border border-slate-300 px-3 py-2">
+      </div>
+    </div>
+    <div>
+      <label class="block text-sm font-semibold mb-1">Skills (comma-separated)</label>
+      <input name="skills" value="{{ career.skills if career else '' }}" class="w-full rounded-lg border border-slate-300 px-3 py-2">
+    </div>
+    <div>
+      <label class="block text-sm font-semibold mb-1">AI impact note</label>
+      <textarea name="ai_impact" rows="2" class="w-full rounded-lg border border-slate-300 px-3 py-2">{{ career.ai_impact if career else '' }}</textarea>
+    </div>
+    <div>
+      <label class="block text-sm font-semibold mb-1">Education path</label>
+      <textarea name="education_path" rows="2" class="w-full rounded-lg border border-slate-300 px-3 py-2">{{ career.education_path if career else '' }}</textarea>
+    </div>
+    <div>
+      <label class="block text-sm font-semibold mb-1">Relevant exams</label>
+      <input name="exams" value="{{ career.exams if career else '' }}" class="w-full rounded-lg border border-slate-300 px-3 py-2">
+    </div>
+    <div class="flex gap-3 pt-2">
+      <button type="submit" class="tap px-5 py-2.5 rounded-lg bg-brand-600 text-white font-semibold shadow-sm">Save</button>
+      <a href="{{ url_for('admin_careers_list') }}" class="tap px-5 py-2.5 rounded-lg border border-slate-300 font-semibold text-slate-700">Cancel</a>
+    </div>
+  </form>
+</div>
+{% endblock %}

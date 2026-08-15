@@ -1,0 +1,2 @@
+cd d:/webappprojects/pathwise
+./venv/Scripts/python main.py

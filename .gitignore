@@ -1,0 +1,7 @@
+venv/
+.venv-linux/
+__pycache__/
+*.pyc
+pathwise.db
+server.log
+.env

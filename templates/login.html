@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}Log in — PathWise India{% endblock %}
+{% block content %}
+<div class="max-w-md mx-auto px-4 sm:px-6 py-10 sm:py-16">
+  <h1 class="text-2xl font-extrabold mb-1">Welcome back</h1>
+  <p class="text-slate-600 mb-8 text-sm">Log in to see your roadmap.</p>
+
+  <form method="POST" class="bg-white border border-slate-200 rounded-3xl p-5 sm:p-6 shadow-sm space-y-4">
+    <div>
+      <label class="block text-sm font-semibold mb-1.5">Email</label>
+      <input type="email" name="email" required class="w-full rounded-xl border border-slate-300 px-3.5 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500">
+    </div>
+    <div>
+      <label class="block text-sm font-semibold mb-1.5">Password</label>
+      <input type="password" name="password" required class="w-full rounded-xl border border-slate-300 px-3.5 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500">
+    </div>
+    <button type="submit" class="tap w-full py-3.5 rounded-xl bg-brand-600 text-white font-semibold active:bg-brand-700">Log in</button>
+  </form>
+
+  <p class="text-sm text-slate-600 mt-5 text-center">
+    New to PathWise? <a href="{{ url_for('register') }}" class="text-brand-700 font-semibold hover:underline">Create a free account</a>
+  </p>
+</div>
+{% endblock %}

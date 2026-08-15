@@ -1,0 +1,108 @@
+{% extends "base.html" %}
+{% block title %}My Roadmap — PathWise India{% endblock %}
+{% block content %}
+<div class="max-w-6xl mx-auto px-4 sm:px-6 py-6 sm:py-10">
+  <div class="flex flex-wrap items-start justify-between gap-4 mb-6 sm:mb-8">
+    <div>
+      <span class="badge bg-brand-100 text-brand-700 mb-3">Step 5 · Stay on Track</span>
+      <h1 class="text-2xl sm:text-3xl font-extrabold">Hi {{ current_user.name.split(' ')[0] }}, here's your roadmap</h1>
+    </div>
+    <div class="flex gap-2">
+      <a href="{{ url_for('assistant_page') }}" class="tap px-4 py-2 rounded-lg bg-brand-600 text-white text-sm font-semibold active:bg-brand-700">Ask the assistant</a>
+      <a href="{{ url_for('onboarding') }}" class="tap px-4 py-2 rounded-lg bg-white border border-slate-300 text-sm font-semibold text-slate-700 active:border-brand-400">Edit profile</a>
+    </div>
+  </div>
+
+  {% if not profile %}
+  <div class="bg-amber-50 border border-amber-200 rounded-2xl p-5 mb-8">
+    <p class="text-amber-900 font-medium">Complete your profile to get personalized career recommendations and scholarship matches.</p>
+    <a href="{{ url_for('onboarding') }}" class="tap inline-block mt-3 px-4 py-2.5 rounded-xl bg-amber-500 text-white font-semibold text-sm active:bg-amber-600">Complete profile</a>
+  </div>
+  {% endif %}
+
+  <div class="grid lg:grid-cols-2 gap-8">
+
+    <section>
+      <h2 class="font-bold text-lg mb-3">Your saved scholarships</h2>
+      {% if saved_scholarships %}
+      <div class="space-y-3">
+        {% for s in saved_scholarships %}
+        <a href="{{ url_for('scholarship_detail', scholarship_id=s.id) }}" class="tap block bg-white border border-slate-200 rounded-xl p-4 shadow-sm active:border-brand-400">
+          <div class="flex justify-between items-start gap-2">
+            <div>
+              <div class="font-semibold">{{ s.name }}</div>
+              <div class="text-xs text-slate-500">{{ s.provider }}</div>
+            </div>
+            <span class="badge {% if s.deadline < today %}bg-slate-200 text-slate-500{% else %}bg-red-50 text-red-700{% endif %} shrink-0">
+              {% if s.deadline < today %}Closed{% else %}Due {{ s.deadline }}{% endif %}
+            </span>
+          </div>
+        </a>
+        {% endfor %}
+      </div>
+      {% else %}
+      <p class="text-sm text-slate-500 bg-white border border-slate-200 rounded-xl p-4">No scholarships saved yet. <a href="{{ url_for('scholarships_list') }}" class="text-brand-700 font-semibold hover:underline">Browse scholarships &rarr;</a></p>
+      {% endif %}
+    </section>
+
+    <section>
+      <h2 class="font-bold text-lg mb-3">Your saved careers</h2>
+      {% if saved_careers %}
+      <div class="space-y-3">
+        {% for c in saved_careers %}
+        <a href="{{ url_for('career_detail', slug=c.slug) }}" class="tap block bg-white border border-slate-200 rounded-xl p-4 shadow-sm active:border-brand-400">
+          <div class="font-semibold">{{ c.name }}</div>
+          <div class="text-xs text-slate-500">₹{{ '{:,}'.format(c.salary_min) }}–{{ '{:,}'.format(c.salary_max) }} &middot; {{ c.demand }} demand</div>
+        </a>
+        {% endfor %}
+      </div>
+      {% else %}
+      <p class="text-sm text-slate-500 bg-white border border-slate-200 rounded-xl p-4">No careers saved yet. <a href="{{ url_for('careers_list') }}" class="text-brand-700 font-semibold hover:underline">Browse careers &rarr;</a></p>
+      {% endif %}
+    </section>
+
+  </div>
+
+  {% if profile %}
+  <div class="grid lg:grid-cols-2 gap-8 mt-10">
+
+    <section>
+      <h2 class="font-bold text-lg mb-3">Recommended careers for you</h2>
+      {% if recommended_careers %}
+      <div class="space-y-3">
+        {% for c in recommended_careers[:5] %}
+        <a href="{{ url_for('career_detail', slug=c.slug) }}" class="tap block bg-white border border-slate-200 rounded-xl p-4 shadow-sm active:border-brand-400">
+          <div class="font-semibold">{{ c.name }}</div>
+          <div class="text-xs text-slate-500 line-clamp-1">{{ c.description }}</div>
+        </a>
+        {% endfor %}
+      </div>
+      {% else %}
+      <p class="text-sm text-slate-500 bg-white border border-slate-200 rounded-xl p-4">No recommendations yet &mdash; select some interests in your profile.</p>
+      {% endif %}
+    </section>
+
+    <section>
+      <h2 class="font-bold text-lg mb-3">Scholarships matched to you</h2>
+      {% if matched_scholarships %}
+      <div class="space-y-3">
+        {% for s in matched_scholarships %}
+        <a href="{{ url_for('scholarship_detail', scholarship_id=s.id) }}" class="tap block bg-white border border-slate-200 rounded-xl p-4 shadow-sm active:border-brand-400">
+          <div class="flex justify-between items-start gap-2">
+            <div class="font-semibold">{{ s.name }}</div>
+            <span class="badge bg-red-50 text-red-700 shrink-0">Due {{ s.deadline }}</span>
+          </div>
+        </a>
+        {% endfor %}
+      </div>
+      <a href="{{ url_for('scholarships_list', matches=1) }}" class="text-sm text-brand-700 font-semibold hover:underline mt-3 inline-block">See all matches &rarr;</a>
+      {% else %}
+      <p class="text-sm text-slate-500 bg-white border border-slate-200 rounded-xl p-4">No matches found yet based on your current profile.</p>
+      {% endif %}
+    </section>
+
+  </div>
+  {% endif %}
+
+</div>
+{% endblock %}

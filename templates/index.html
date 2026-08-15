@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}PathWise India — Discover your future{% endblock %}
+{% block content %}
+
+<section class="max-w-6xl mx-auto px-4 sm:px-6 pt-10 sm:pt-16 pb-10 sm:pb-20 text-center">
+  <span class="badge bg-brand-100 text-brand-700 mb-5">For Indian students, Classes 9-12 and beyond</span>
+  <h1 class="text-3xl sm:text-5xl font-extrabold tracking-tight mb-4 max-w-3xl mx-auto leading-tight">
+    Discover your future.<br class="hidden sm:block"> Find the funding to reach it.
+  </h1>
+  <p class="text-base sm:text-lg text-slate-600 max-w-2xl mx-auto mb-7">
+    One journey from "what should I do after 10th/12th?" to matched scholarships and a personal
+    roadmap — instead of fifty scattered websites.
+  </p>
+  <div class="flex flex-col sm:flex-row sm:flex-wrap justify-center gap-3 max-w-sm sm:max-w-none mx-auto">
+    <a href="{{ url_for('register') }}" class="tap px-6 py-3.5 sm:py-3 rounded-2xl sm:rounded-xl bg-brand-600 text-white font-semibold shadow-sm active:bg-brand-700">Start your journey</a>
+    <a href="{{ url_for('careers_list') }}" class="tap px-6 py-3.5 sm:py-3 rounded-2xl sm:rounded-xl bg-white border border-slate-300 font-semibold text-slate-700 active:border-brand-400">Explore careers</a>
+  </div>
+</section>
+
+<section class="max-w-6xl mx-auto px-4 sm:px-6 pb-10 sm:pb-20">
+  <div class="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-5 gap-3 sm:gap-4">
+    {% set steps = [
+      ("1", "Discover Yourself", "Interest-based assessment to understand what fits you."),
+      ("2", "Explore Careers", "Job outlook, salary ranges, and AI impact for every path."),
+      ("3", "Choose Education", "Degrees, colleges, entrance exams, and costs."),
+      ("4", "Find Funding", "Government, state, NGO and corporate scholarships matched to you."),
+      ("5", "Stay on Track", "A roadmap with deadlines and application checklists.")
+    ] %}
+    {% for num, title, desc in steps %}
+    <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 sm:p-5 {% if loop.index == 5 %}col-span-2 sm:col-span-1{% endif %}">
+      <div class="w-9 h-9 rounded-full bg-brand-600 text-white flex items-center justify-center font-bold mb-3 sm:mb-4">{{ num }}</div>
+      <h3 class="font-bold mb-1.5 text-sm sm:text-base">{{ title }}</h3>
+      <p class="text-xs sm:text-sm text-slate-600 leading-relaxed">{{ desc }}</p>
+    </div>
+    {% endfor %}
+  </div>
+</section>
+
+<section class="bg-white border-t border-slate-200">
+  <div class="max-w-6xl mx-auto px-4 sm:px-6 py-12 sm:py-16 text-center">
+    <h2 class="text-xl sm:text-2xl font-extrabold mb-3">Free to explore. No spam, no ads.</h2>
+    <p class="text-slate-600 mb-7 max-w-xl mx-auto text-sm sm:text-base">Create a free profile to unlock personalized career recommendations and scholarship matching.</p>
+    <a href="{{ url_for('register') }}" class="tap px-6 py-3.5 sm:py-3 rounded-2xl sm:rounded-xl bg-brand-600 text-white font-semibold shadow-sm active:bg-brand-700 inline-block w-full sm:w-auto max-w-xs sm:max-w-none">Create your free profile</a>
+  </div>
+</section>
+
+{% endblock %}

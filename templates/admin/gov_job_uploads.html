@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}Admin · Gov job PDFs — PathWise India{% endblock %}
+{% block content %}
+<div class="max-w-4xl mx-auto px-4 sm:px-6 py-10">
+  <h1 class="text-3xl font-extrabold mb-2">Gov job PDFs</h1>
+  <p class="text-slate-600 mb-6">
+    Upload an official job notification PDF here to drop it into the <code class="text-xs bg-slate-100 px-1 rounded">pathwise-mcp</code>
+    extraction queue. It won't appear on <a href="{{ url_for('gov_jobs_list') }}" class="text-brand-700 font-semibold">/gov-jobs</a>
+    until an MCP client runs it through the <code class="text-xs bg-slate-100 px-1 rounded">store_notification_pdf</code> &rarr;
+    extract &rarr; <code class="text-xs bg-slate-100 px-1 rounded">save_job_to_database</code> workflow.
+    {{ processed_count }} notification{{ '' if processed_count == 1 else 's' }} live so far.
+  </p>
+
+  <form method="POST" action="{{ url_for('admin_gov_job_upload') }}" enctype="multipart/form-data"
+        class="bg-white border border-slate-200 rounded-2xl p-6 flex flex-col sm:flex-row items-start sm:items-center gap-4 mb-8">
+    <input type="file" name="pdf" accept="application/pdf" required class="flex-1 w-full text-sm">
+    <button type="submit" class="tap px-5 py-2.5 rounded-lg bg-brand-600 text-white font-semibold shadow-sm shrink-0">Upload PDF</button>
+  </form>
+
+  <h2 class="text-lg font-bold mb-3">Pending extraction ({{ pending|length }})</h2>
+  <div class="grid gap-3">
+    {% for f in pending %}
+    <div class="bg-white border border-slate-200 rounded-2xl p-4 flex items-center justify-between gap-3">
+      <div class="min-w-0">
+        <p class="font-bold truncate">{{ f.name }}</p>
+        <p class="text-sm text-slate-500">{{ (f.size / 1024 / 1024) | round(1) }} MB</p>
+      </div>
+      <form method="POST" action="{{ url_for('admin_gov_job_pending_delete', filename=f.name) }}"
+            onsubmit="return confirm('Remove this upload before it has been extracted?');" class="shrink-0">
+        <button type="submit" class="tap px-3 py-1.5 rounded-lg border border-red-300 text-sm font-semibold text-red-700">Remove</button>
+      </form>
+    </div>
+    {% endfor %}
+  </div>
+  {% if not pending %}
+  <p class="text-slate-500 text-center py-12">Nothing waiting on extraction.</p>
+  {% endif %}
+</div>
+{% endblock %}

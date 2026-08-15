@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% block title %}{{ 'Edit' if sch else 'Add' }} scholarship — PathWise India{% endblock %}
+{% block content %}
+<div class="max-w-2xl mx-auto px-4 sm:px-6 py-10">
+  <h1 class="text-2xl font-extrabold mb-6">{{ 'Edit' if sch else 'Add' }} scholarship</h1>
+  <form method="POST" class="space-y-4 bg-white border border-slate-200 rounded-2xl p-6">
+    <div>
+      <label class="block text-sm font-semibold mb-1">Name</label>
+      <input name="name" required value="{{ sch.name if sch else '' }}" class="w-full rounded-lg border border-slate-300 px-3 py-2">
+    </div>
+    <div>
+      <label class="block text-sm font-semibold mb-1">Provider</label>
+      <input name="provider" value="{{ sch.provider if sch else '' }}" class="w-full rounded-lg border border-slate-300 px-3 py-2">
+    </div>
+    <div>
+      <label class="block text-sm font-semibold mb-1">Type (e.g. Government, Private, Bank-sponsored)</label>
+      <input name="type" value="{{ sch.type if sch else '' }}" class="w-full rounded-lg border border-slate-300 px-3 py-2">
+    </div>
+    <div>
+      <label class="block text-sm font-semibold mb-1">Description</label>
+      <textarea name="description" rows="3" class="w-full rounded-lg border border-slate-300 px-3 py-2">{{ sch.description if sch else '' }}</textarea>
+    </div>
+    <div>
+      <label class="block text-sm font-semibold mb-1">Eligible education level</label>
+      <select name="education_level" class="w-full rounded-lg border border-slate-300 px-3 py-2">
+        <option value="">Any</option>
+        {% for level in education_levels %}
+        <option value="{{ level }}" {% if sch and sch.education_level == level %}selected{% endif %}>{{ level }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label class="block text-sm font-semibold mb-1">Eligible states (comma-separated, or "All")</label>
+      <input name="states" value="{{ sch.states if sch else 'All' }}" class="w-full rounded-lg border border-slate-300 px-3 py-2">
+    </div>
+    <div>
+      <label class="block text-sm font-semibold mb-1">Eligible categories (comma-separated, or "All")</label>
+      <input name="categories" value="{{ sch.categories if sch else 'All' }}" class="w-full rounded-lg border border-slate-300 px-3 py-2">
+    </div>
+    <div>
+      <label class="block text-sm font-semibold mb-1">Gender restriction</label>
+      <select name="gender" class="w-full rounded-lg border border-slate-300 px-3 py-2">
+        <option value="All" {% if sch and sch.gender == 'All' %}selected{% endif %}>All</option>
+        <option value="Male" {% if sch and sch.gender == 'Male' %}selected{% endif %}>Male</option>
+        <option value="Female" {% if sch and sch.gender == 'Female' %}selected{% endif %}>Female</option>
+      </select>
+    </div>
+    <div class="grid grid-cols-2 gap-4">
+      <div>
+        <label class="block text-sm font-semibold mb-1">Income ceiling (₹/yr, blank = none)</label>
+        <input type="number" name="income_ceiling" value="{{ sch.income_ceiling if sch else '' }}" class="w-full rounded-lg border border-slate-300 px-3 py-2">
+      </div>
+      <div>
+        <label class="block text-sm font-semibold mb-1">Amount / benefit</label>
+        <input name="amount" value="{{ sch.amount if sch else '' }}" class="w-full rounded-lg border border-slate-300 px-3 py-2">
+      </div>
+    </div>
+    <div>
+      <label class="block text-sm font-semibold mb-1">Deadline (YYYY-MM-DD)</label>
+      <input name="deadline" value="{{ sch.deadline if sch else '' }}" placeholder="2026-09-20" class="w-full rounded-lg border border-slate-300 px-3 py-2">
+    </div>
+    <div>
+      <label class="block text-sm font-semibold mb-1">Apply URL</label>
+      <input name="apply_url" value="{{ sch.apply_url if sch else '' }}" class="w-full rounded-lg border border-slate-300 px-3 py-2">
+    </div>
+    <div>
+      <label class="block text-sm font-semibold mb-1">Required documents</label>
+      <input name="documents" value="{{ sch.documents if sch else '' }}" class="w-full rounded-lg border border-slate-300 px-3 py-2">
+    </div>
+    <div class="flex gap-3 pt-2">
+      <button type="submit" class="tap px-5 py-2.5 rounded-lg bg-brand-600 text-white font-semibold shadow-sm">Save</button>
+      <a href="{{ url_for('admin_scholarships_list') }}" class="tap px-5 py-2.5 rounded-lg border border-slate-300 font-semibold text-slate-700">Cancel</a>
+    </div>
+  </form>
+</div>
+{% endblock %}

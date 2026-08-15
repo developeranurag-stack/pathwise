@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}Government Job Notifications — PathWise India{% endblock %}
+{% block content %}
+<div class="max-w-6xl mx-auto px-4 sm:px-6 py-10">
+  <span class="badge bg-brand-100 text-brand-700 mb-3">Govt Jobs</span>
+  <h1 class="text-3xl font-extrabold mb-2">Government job notifications</h1>
+  <p class="text-slate-600 mb-6">Vacancy details extracted from official recruitment notification PDFs.</p>
+
+  <div class="grid gap-3 sm:gap-4">
+    {% for j in jobs %}
+    <a href="{{ url_for('gov_job_detail', job_id=j.id) }}" class="tap bg-white border border-slate-200 rounded-2xl p-5 shadow-sm active:border-brand-400 block">
+      <div class="flex flex-wrap items-start justify-between gap-2 mb-2">
+        <div>
+          <h3 class="font-bold text-lg">{{ j.job_title }}</h3>
+          <p class="text-sm text-slate-500">{{ j.department }}</p>
+        </div>
+        {% if j.total_vacancies %}
+        <span class="badge bg-emerald-50 text-emerald-700">{{ j.total_vacancies }} vacancies</span>
+        {% endif %}
+      </div>
+      <div class="flex flex-wrap gap-2 text-xs">
+        {% if j.qualification %}<span class="badge bg-slate-100 text-slate-700">{{ j.qualification }}</span>{% endif %}
+        {% if j.apply_end_date %}<span class="badge bg-red-50 text-red-700">Apply by: {{ j.apply_end_date }}</span>{% endif %}
+      </div>
+    </a>
+    {% endfor %}
+  </div>
+
+  {% if not jobs %}
+  <p class="text-slate-500 text-center py-12">No government job notifications have been added yet.</p>
+  {% endif %}
+</div>
+{% endblock %}
