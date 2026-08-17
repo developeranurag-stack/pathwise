@@ -101,15 +101,19 @@
     });
   }
 
-  // ---- Text-to-speech (assistant replies read aloud in Hindi) ----
+  // ---- Text-to-speech (assistant replies read aloud; auto lang) ----
   const synth = window.speechSynthesis;
   let speakEnabled = false;
 
-  function pickHindiVoice() {
+  function containsDevanagari(text) {
+    return /[\u0900-\u097F]/.test(text || '');
+  }
+
+  function pickVoice(lang) {
     if (!synth) return null;
     const voices = synth.getVoices();
-    return voices.find(function (v) { return v.lang === HINDI_LANG; })
-      || voices.find(function (v) { return v.lang && v.lang.toLowerCase().startsWith('hi'); })
+    return voices.find(function (v) { return v.lang === lang; })
+      || voices.find(function (v) { return v.lang && v.lang.toLowerCase().startsWith(lang.toLowerCase().slice(0,2)); })
       || null;
   }
 
@@ -117,8 +121,9 @@
     if (!speakEnabled || !synth || !text) return;
     synth.cancel();
     const utter = new SpeechSynthesisUtterance(text);
-    utter.lang = HINDI_LANG;
-    const voice = pickHindiVoice();
+    const useHindi = containsDevanagari(text);
+    utter.lang = useHindi ? HINDI_LANG : 'en-IN';
+    const voice = pickVoice(utter.lang);
     if (voice) utter.voice = voice;
     synth.speak(utter);
   }
