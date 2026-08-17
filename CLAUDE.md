@@ -40,6 +40,12 @@ Promote a registered user to admin (`/admin`):
 python make_admin.py user@example.com
 ```
 
+Completely clear + re-initialize the database (for schema changes or fresh start):
+```
+python clear_db.py
+```
+(Confirm with CLEARDB when prompted. Script drops then immediately recreates schema + seeds via init. Ready to use, no need to start server first.)
+
 There is no test suite, linter, or build step configured in this repo.
 
 ## Architecture

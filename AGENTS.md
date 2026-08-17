@@ -14,6 +14,7 @@ Compact guidance for working in this PathWise India Flask repo. Consult `CLAUDE.
 - `python create_demo_user.py` — creates/resets `demo@pathwise.in` / `demo1234` (safe to rerun; refreshes profile + saves)
 - `python make_admin.py user@example.com` — promotes registered user for `/admin` access
 - `python backfill_extra_careers.py` — one-time load of EXTRA_CAREERS (fails on re-run due to UNIQUE constraints)
+- `python clear_db.py` — **destructive** full wipe + re-init (`DROP SCHEMA public CASCADE;` then schema+seeds). Use to reset after schema.sql edits or for clean slate. DB is ready immediately after (no need to start server first).
 
 No test/lint/typecheck/build commands exist.
 
@@ -41,13 +42,14 @@ No test/lint/typecheck/build commands exist.
 
 ## Assistant (`/assistant`)
 - Requires `OPENROUTER_API_KEY` (lazy; absence returns error only on use). Uses `openai` client against OpenRouter, default `openai/gpt-4o-mini` (override `OPENROUTER_MODEL`).
-- `run_agent_turn()` is tool-calling loop (max 5 iters) over read-only tools backed by `career_app_view` + scholarships + matcher. Never writes DB, never hallucinates facts.
+- `run_agent_turn()` is tool-calling loop (max 5 iters). Can read careers/scholarships/gov jobs + write new gov job notifications when user provides ad text/material (historical records are always kept because vacancies recur in following years).
 - Replies in Hindi (Devanagari) by default but switches to English if user writes in English or asks to "talk in English". Keeps proper nouns in English. History capped at ~12 msgs in Flask session (not DB). Reset via POST `/assistant/reset`.
-- Tools: `search_careers`, `get_career_details`, `search_scholarships`, `get_student_profile`.
+- Tools: `search_careers`, `get_career_details`, `search_scholarships`, `get_student_profile`, `search_gov_jobs`, `get_gov_job_details`, `ingest_gov_job` (writes only gov jobs from user-provided ad material; historical records kept because vacancies recur).
 
 ## Government jobs
-- Read-only UI at `/gov-jobs*` (populated from `gov_job_notifications` + `gov_job_posts`).
-- Upload PDFs (admin) to `../pathwise-mcp/tobepicked/` (hardcoded `GOV_JOB_UPLOAD_DIR` relative to `main.py`); requires sibling `pathwise-mcp` project on same host. After upload, use MCP client to run `store_notification_pdf` (pointing at the file in tobepicked/) then extract + save. PathWise admin now tracks per-file whether MCP successfully read it (by stem match on local_pdf_path).
+- Read-only UI at `/gov-jobs*` (populated from `gov_job_notifications` + `gov_job_posts`). All historical notifications are kept forever (vacancies recur in following years).
+- The assistant can search them, show details, and directly ingest new ones via `ingest_gov_job` when user pastes ad text/screenshots (bypasses or supplements MCP).
+- Upload PDFs (admin) to `../pathwise-mcp/tobepicked/` for MCP processing; direct AI ingest also supported via the assistant or `direct_ingest_gov_job.py` script.
 - `.mcp.json` points at the MCP server (paths are dev-machine specific).
 
 ## Scraping / sources (admin only)

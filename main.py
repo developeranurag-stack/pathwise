@@ -11,17 +11,19 @@ from werkzeug.utils import secure_filename
 import db as dbmod
 from seed_data import CAREERS, SCHOLARSHIPS, INTEREST_CLUSTERS
 import scraper
-import assistant
+# assistant is imported lazily inside the /assistant routes so the app can start
+# without the optional 'openai' package (see requirements.txt and AGENTS.md)
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "dev-secret-key-change-in-production")
 app.config["MAX_CONTENT_LENGTH"] = 32 * 1024 * 1024  # 32MB, generous for a scanned notification PDF
 
 # Drop folder for the sibling pathwise-mcp project (see ../pathwise-mcp/CLAUDE.md) — PDFs placed
-# here are picked up by its `store_notification_pdf` MCP tool for extraction into
-# gov_job_notifications. Only works when both projects run on the same host, same as
-# pathwise-mcp's own stored_pdfs/local_pdf_path convention.
-GOV_JOB_UPLOAD_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "pathwise-mcp", "tobeextracted")
+# here are picked up manually (or by instructing an MCP client) for `store_notification_pdf`
+# which copies to stored_pdfs/ then extract + save_job_to_database into gov_job_notifications.
+# We track successful MCP read by matching the original filename stem against stored local_pdf_path.
+# Only works when both projects run on the same host.
+GOV_JOB_UPLOAD_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "pathwise-mcp", "tobepicked")
 
 EDUCATION_LEVELS = ["Class 9-10", "Class 11-12", "Undergraduate", "Postgraduate", "Diploma"]
 CATEGORIES = ["General", "OBC", "SC", "ST", "EWS", "Minority"]
@@ -267,6 +269,133 @@ def recommended_career_ids(profile, db):
     return [r["career_id"] for r in rows]
 
 
+def next_steps_for_profile(profile, db):
+    if not profile:
+        return None
+    edu = profile.get("education_level", "")
+    interests = json.loads(profile["interests"]) if profile.get("interests") else []
+    steps = {"stream": None, "subjects": [], "actions": [], "career_tips": []}
+
+    if edu == "Class 9-10":
+        if not interests:
+            steps["actions"].append("अपनी रुचियों के आधार पर स्ट्रीम चुनें — साइंस, कॉमर्स या आर्ट्स।")
+            return steps
+
+        cluster_stream = {
+            "tech": ("Science (PCM)", "मैथमैटिक्स, फिजिक्स, कंप्यूटर साइंस/ईटी", "जीई जेई मेन, CUET, या स्टेट CET की तैयारी शुरू करें। कोडिंग बासिक्स सीखें (Python/HTML-CSS)।"),
+            "science": ("Science (PCM/PCB)", "फिजिक्स, केमिस्ट्री, बायोलॉजी/गणित", "NEET/JEE की तैयारी के लिए कोचिंग या सेल्फ-स्टडी शुरू करें। प्रयोगात्मक कौशल बनाए रखें।"),
+            "engineering": ("Science (PCM)", "मैथमैटिक्स, फिजिक्स, केमिस्ट्री", "JEE Main/Advanced की तैयारी शुरू करें। स्केचिंग और ऑटोकैड बेसिक सीखें।"),
+            "healthcare": ("Science (PCB)", "बायोलॉजी, केमिस्ट्री, फिजिक्स", "NEET-UG की तैयारी शुरू करें। मेडिकल कोचिंग या बोर्ड के साथ एलनप्लस रजिस्टर करें।"),
+            "business": ("Commerce", "अकाउंटेंसी, बिजनेस स्टडीज, इकॉनॉमिक्स", "CS Foundation या बोर्ड के साथ अकाउंटेंसी बेसिक सीखें।"),
+            "law": ("Arts/Commerce", "पोलिटिकल साइंस, इकॉनॉमिक्स, इंग्लिश", "CLAT के लिए लेगल रीजनिंग और जीजी स्टडी शुरू करें।"),
+            "social": ("Arts/Humanities", "पोलिटिकल साइंस, सोशल साइंस, सांस्कृतिक अध्ययन", "B.Ed या सामाजिक कार्य पाठ्यक्रमों की जांच करें। वॉलंटियर वर्क शुरू करें।"),
+            "creative": ("Arts/Commerce", "ग्राफिक डिजाइन, फाइन आर्ट्स, इंटीरियर डिजाइन बेसिक्स", "NID DAT/NIFT के लिए पोर्टफोलियो शुरू करें। स्केचिंग और कन्वेंशनल टूल्स सीखें।"),
+        }
+
+        tips = []
+        for c in interests:
+            if c in cluster_stream:
+                s, subj, action = cluster_stream[c]
+                if not steps["stream"]:
+                    steps["stream"] = s
+                steps["subjects"].append(subj)
+                steps["actions"].append(action)
+                tips.append(f"{c}: {s} स्ट्रीम चुनें")
+            else:
+                steps["actions"].append(f"{c} के लिए उपयुक्त स्ट्रीम और एग्जाम की जांच करें।")
+
+        steps["career_tips"] = [
+            "अभी क्लास 10 में हो — स्ट्रीम चुनने से पहले हर ऑप्शन के बारे में जानें।",
+            "किसी सेनियर या कोच से परामर्श लें, फिर स्ट्रीम फिक्स करें।",
+            "स्ट्रीम चुनने के बाद ही टारगेटेड एग्जाम की तैयारी शुरू करें।"
+        ]
+        return steps
+
+    if edu == "Class 11-12":
+        if not interests:
+            steps["actions"].append("अपनी स्ट्रीम के एग्जाम की तैयारी फुल-स्पीड जारी रखें।")
+            steps["actions"].append("काउंसलिंग लें और किसी मेनटर से अपनी रोडमैप बनाएं।")
+            return steps
+
+        cluster_action = {
+            "tech": ("जीई जेई मेन/एडवांस्ड या CUET पर तैयारी जारी रखें। साइड में Python/Web बेसिक प्रैक्टिस करें।", "B.Tech/BCA/B.Sc CS के लिए कॉलेज चयन और स्कॉलरशिप की जांच शुरू करें।"),
+            "science": ("NEET/JEE की तैयारी फुल-फोकस में जारी रखें। सभी सब्जेक्ट्स की रिवीजन शेड्यूल बनाएं।", "कोचिंग या ऑनलाइन कोर्स की फीडबैक लें। रिवीजन और मॉक टेस्ट की आदत डालें।"),
+            "engineering": ("JEE Main/Advanced या स्टेट CET की तैयारी बढ़ाएं। प्रैक्टिकल प्रोजेक्ट्स (ऑटोकैड/कोडिंग) शुरू करें।", "Polytechnic/Engineering कॉलेज की शॉर्टलिस्ट बनाएं।"),
+            "healthcare": ("NEET-UG की तैयारी फाइनल स्पर्श में लाएं। बायोलॉजी/केमिस्ट्री के प्रैक्टिकल्स नज़रअंदाज न करें।", "मेडिकल कॉलेज के कटऑफ और सीट ऑलोटमेंट की जांच करें।"),
+            "business": ("कॉमर्स की गड़न मजबूत करें — अकाउंटेंसी, बिजनेस स्टडीज, इकॉनॉमिक्स। CS Foundation/Executive की तैयारी शुरू करें।", "B.Com/BBA/BMS कॉलेज की जांच करें। शॉर्टलिस्ट और एडमिशन प्रोसेस शुरू करें।"),
+            "law": ("CLAT/AILET की तैयारी बढ़ाएं। लेगल रीजनिंग, इंग्लिश और जीजी दैनिक प्रैक्टिस करें।", "5-year integrated LLB कॉलेज की शॉर्टलिस्ट बनाएं।"),
+            "social": ("Humanities सब्जेक्ट्स की गहराई से पढ़ाई करें। सामाजिक कार्य/रिसर्च प्रोजेक्ट्स शुरू करें।", "B.A/B.Ed/सोशल वर्क कॉर्स की जांच करें। वॉलंटियर/इंटर्नशिप के लिए NGO से जुड़ें।"),
+            "creative": ("पोर्टफोलियो बनाना शुरू करें। NID DAT/NIFT/JEE Main Paper 2 की तैयारी जारी रखें।", "डिजाइन स्कूल/कॉलेज की एडमिशन गाइड बनाएं। फ्रीलेंसिंग/इंटर्नशिप के लिए प्लेटफॉर्म जांचें।"),
+        }
+        for c in interests:
+            if c in cluster_action:
+                prep, next_step = cluster_action[c]
+                steps["actions"].append(prep)
+                steps["actions"].append(next_step)
+            else:
+                steps["actions"].append(f"{c} के लिए उपयुक्त UG कॉर्स और एग्जाम की जांच करें।")
+
+        steps["career_tips"] = [
+            "क्लास 11-12 का समय एग्जाम की तैयारी का सबसे महत्वपूर्ण चरण है।",
+            "केवल बुक्स से नहीं, प्रैक्टिकल प्रोजेक्ट्स/इंटर्नशिप भी करें।",
+            "काउंसलिंग से अपनी रोडमैप लगातार अपडेट करें।"
+        ]
+        return steps
+
+    if edu == "Undergraduate":
+        if not interests:
+            steps["actions"].append("अपनी स्पेशलाइजेशन या इंटर्नशिप के लिए प्लान बनाएं।")
+            return steps
+
+        cluster_action = {
+            "tech": ("FULL STACK / DATA / ML इंटर्नशिप के लिए आवेदन करें। GitHub/Portfolio अपडेट करें।", "Google Summer of Code, Hackathons, और Freelancing प्रोजेक्ट्स शुरू करें।"),
+            "science": ("रिसर्च इंटर्नशिप (DRDO/ICMR/जीआईएस) या लैब असिस्टेंटशिप के लिए अप्लाई करें।", "रेसर्च पेपर पब्लिश करने और कॉन्फ्रेंस में प्रेजेंट करने की कोशिश करें।"),
+            "engineering": ("इंटर्नशिप (स्टैग) और प्रैक्टिकल प्रोजेक्ट्स बढ़ाएं। Core/IT कंपनियों में अप्लाई करें।", "AutoCAD, CATIA, सोलर/रिन्यूएबल प्रोजेक्ट्स जोड़ें।"),
+            "healthcare": ("हॉस्पिटल इंटर्नशिप, रिसर्च असिस्टेंट या फ्रीलेंसिंग के लिए आवेदन करें।", "रजिस्ट्रेशन/लाइसेंसिंग एग्जाम (जैसे RCI, Pharmacy Council) की जांच करें।"),
+            "business": ("स्टार्टअप इंटर्नशिप, कैंपस प्लेसमेंट प्रिप, या CA/CS की रजिस्ट्रेशन करें।", "बिजनेस प्लान प्रतियोगिताओं और शेयर मार्केट प्रैक्टिस शुरू करें।"),
+            "law": ("लॉ फर्म/जज मंथली/CLAT PG/जूडिशियरी रिसर्च इंटर्नशिप के लिए अप्लाई करें।", "मॉक ट्रायल, मोट मोट केस स्टडी और लेगल राइटिंग प्रैक्टिस बढ़ाएं।"),
+            "social": ("शिक्षा/Social Work NGO इंटर्नशिप, रिसर्च प्रोजेक्ट्स या B.Ed प्रिप करें।", "पर्यावरण/महिला/बाल कल्याण के प्लेटफॉर्म से जुड़ें।"),
+            "creative": ("डिजाइन स्टूडियो/एजेंसी इंटर्नशिप, फ्रीलेंसिंग गिग्स और पोर्टफोलियो अपडेट करें।", "Adobe Suite/Canva/वीडियो एडिटिंग प्रॉफिशिएंसी बढ़ाएं।"),
+        }
+        for c in interests:
+            if c in cluster_action:
+                prep, next_step = cluster_action[c]
+                steps["actions"].append(prep)
+                steps["actions"].append(next_step)
+            else:
+                steps["actions"].append(f"{c} फील्ड में इंटर्नशिप और प्रैक्टिकल प्रोजेक्ट्स शुरू करें।")
+
+        steps["career_tips"] = [
+            "यूनिटेक्स्ट का समय स्किल्स बिल्ड करने का सबसे अच्छा मौका है।",
+            "नट वर्किंग प्रोजेक्ट्स बनाएं — ये प्लेसमेंट में ज्यादा मदद करेंगे।",
+            "सर्टिफिकेशन कोर्स (Coursera/Google/Meta) करके रेज्यूमे बढ़ाएं।"
+        ]
+        return steps
+
+    if edu == "Postgraduate":
+        steps["actions"].append("अपनी स्पेशलाइजेशन (Research/Industry/Management) के लिए रोडमैप तैयार करें।")
+        steps["actions"].append("सर्टिफिकेशन (जैसे PMP, CFA, GATE, NET) या फ्रेशनल कोर्स की तैयारी शुरू करें।")
+        steps["actions"].append("नेटवर्किंग बढ़ाएं — कॉन्फ्रेंस, लिंक्डइन, इंडस्ट्री मीटअप्स में शामिल हों।")
+        steps["career_tips"] = [
+            "पोस्टग्रेजुएट से पहले या साथ ही इंडस्ट्री एक्सपोजर ज़रूरी है।",
+            "रिसर्च/प्रैक्टिकल प्रोजेक्ट्स हाइलाइट करके प्लेसमेंट या फुर्ती पदों के लिए तैयार रहें।"
+        ]
+        return steps
+
+    if edu == "Diploma":
+        steps["actions"].append("अपनी डिप्लोमा स्पेशलाइजेशन के अनुकूल जॉब रोले की लिस्ट बनाएं।")
+        steps["actions"].append("प्रैक्टिकल ट्रेनिंग/इंटर्नशिप के लिए स्थानीय इंडस्ट्री/गवर्नमेंट योजनाओं की जांच करें।")
+        steps["actions"].append("अगर पढ़ाई जारी रखना है, तो लेटरल एंट्री से बैचलर डिग्री की जांच करें।")
+        steps["career_tips"] = [
+            "डिप्लोमा हाथ में है — स्किल्स की तरफ ज़्यादा फोकस करें।",
+            "जॉब ओपनिंग्स (गवर्नमेंट/प्राइवेट) में अप्लाई करने की आदत डालें।"
+        ]
+        return steps
+
+    steps["actions"].append("अपने करियर रोडमैप पर नज़र रखें और नए स्किल्स सीखते रहें।")
+    return steps
+
+
 # ----------------- ROUTES: CORE -----------------
 
 @app.route("/")
@@ -408,7 +537,7 @@ def career_detail(slug):
         ).fetchone()
         is_saved = row is not None
 
-    return render_template("career_detail.html", career=career, is_saved=is_saved)
+    return render_template("career_detail.html", career=career, is_saved=is_saved, profile=current_profile())
 
 
 @app.route("/careers/<career_id>/toggle-save", methods=["POST"])
@@ -753,13 +882,40 @@ def admin_source_delete(source_id):
 @admin_required
 def admin_gov_jobs_list():
     db = get_db()
-    processed_count = db.execute("SELECT COUNT(*) AS n FROM gov_job_notifications").fetchone()["n"]
+    rows = db.execute(
+        "SELECT id, job_title, local_pdf_path, created_at FROM gov_job_notifications ORDER BY created_at DESC"
+    ).fetchall()
+    processed_count = len(rows)
+
+    # Map original filename stem -> list of matching saved jobs.
+    # MCP's store_notification_pdf renames to {stem}_{mtime_ns}.pdf so we detect by prefix match on the stored copy.
+    ingested = {}
+    for r in rows:
+        lp = r["local_pdf_path"] or ""
+        if lp:
+            b = os.path.basename(lp)
+            if b.lower().endswith(".pdf"):
+                noext = b[:-4]
+                if "_" in noext:
+                    cand, suf = noext.rsplit("_", 1)
+                    if suf.isdigit():
+                        ingested.setdefault(cand, []).append(
+                            {"id": r["id"], "job_title": r["job_title"], "created_at": str(r["created_at"])[:19]}
+                        )
+
     pending = []
     if os.path.isdir(GOV_JOB_UPLOAD_DIR):
         for name in sorted(os.listdir(GOV_JOB_UPLOAD_DIR)):
             path = os.path.join(GOV_JOB_UPLOAD_DIR, name)
             if os.path.isfile(path):
-                pending.append({"name": name, "size": os.path.getsize(path)})
+                stem = os.path.splitext(name)[0]
+                matches = ingested.get(stem, [])
+                pending.append({
+                    "name": name,
+                    "size": os.path.getsize(path),
+                    "status": "processed" if matches else "pending",
+                    "matches": matches,
+                })
     return render_template("admin/gov_job_uploads.html", pending=pending, processed_count=processed_count)
 
 
@@ -783,7 +939,7 @@ def admin_gov_job_upload():
         dest = os.path.join(GOV_JOB_UPLOAD_DIR, f"{stem}_{now_iso().replace(':', '').replace('-', '')}{ext}")
     file.save(dest)
 
-    flash(f'"{filename}" uploaded — run it through the pathwise-mcp extraction workflow to add it to gov job listings.', "success")
+    flash(f'"{filename}" uploaded to drop dir. Refresh /admin/gov-jobs to see if pathwise-mcp has read it (status changes to processed when a matching job appears in DB).', "success")
     return redirect(url_for("admin_gov_jobs_list"))
 
 
@@ -824,6 +980,7 @@ def dashboard():
 
     recommended_careers = []
     matched_scholarships = []
+    next_steps = None
     if profile:
         rec_ids = recommended_career_ids(profile, db)
         if rec_ids:
@@ -835,12 +992,15 @@ def dashboard():
         all_scholarships = db.execute("SELECT * FROM scholarships ORDER BY deadline").fetchall()
         matched_scholarships = [s for s in all_scholarships if scholarship_matches_profile(s, profile)][:6]
 
+        next_steps = next_steps_for_profile(profile, db)
+
     today = datetime.date.today().isoformat()
 
     return render_template(
         "dashboard.html", profile=profile, saved_careers=saved_careers,
         saved_scholarships=saved_scholarships, recommended_careers=recommended_careers,
         matched_scholarships=matched_scholarships, today=today,
+        next_steps=next_steps,
     )
 
 
@@ -865,12 +1025,25 @@ def assistant_message():
     db = get_db()
     history = session.get("assistant_history", [])
     try:
+        import assistant
         new_history, reply, cards = assistant.run_agent_turn(
             db, scholarship_matches_profile, session["user_id"], history, user_message,
         )
+    except ImportError:
+        return jsonify({"error": "Assistant unavailable (install 'openai' package from requirements.txt)."}), 503
     except RuntimeError as e:
-        return jsonify({"error": str(e)}), 503
-    except Exception:
+        msg = str(e)
+        if "फोटो/इमेज" in msg or "image" in msg.lower():
+            return jsonify({"error": msg}), 400
+        return jsonify({"error": msg}), 503
+    except Exception as e:
+        msg = str(e)
+        if ("this model does not support image input" in msg.lower()
+                or "cannot read" in msg.lower()
+                or "image input" in msg.lower()
+                or "does not support vision" in msg.lower()):
+            return jsonify({"error": "अभी तक फोटो/इमेज भेजने की सुविधा उपलब्ध नहीं है। कृपया अपना सवाल टेक्स्ट में टाइप करें।"}), 400
+        app.logger.exception("Assistant error")
         return jsonify({"error": "The assistant hit an error. Please try again."}), 502
 
     session["assistant_history"] = new_history

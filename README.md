@@ -161,7 +161,13 @@ are created automatically on first run against an empty database, from `seed_dat
 ## Demo user (staging)
 
 Run `python create_demo_user.py` after the database exists (or it will create one)
-to set up a demo account with a filled-in profile and a few saved careers/scholarships:
+to set up a demo account with a filled-in profile and a few saved careers/scholarships.
+
+To completely wipe + re-initialize the DB (e.g. after editing `schema.sql`):
+```
+python clear_db.py
+```
+(DB is cleared and re-seeded immediately; then you can start the server.)
 
 - Email: `demo@pathwise.in`
 - Password: `demo1234`

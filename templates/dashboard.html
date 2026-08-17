@@ -20,6 +20,45 @@
   </div>
   {% endif %}
 
+  {% if next_steps and profile %}
+  <div class="bg-brand-50 border border-brand-200 rounded-2xl p-5 sm:p-6 mb-8">
+    {% if profile.education_level == 'Class 9-10' %}
+    <h2 class="font-bold text-lg mb-3 text-brand-900">क्लास 10 के बाद आपका रोडमैप</h2>
+    {% elif profile.education_level == 'Class 11-12' %}
+    <h2 class="font-bold text-lg mb-3 text-brand-900">क्लास 12 के बाद आपका रोडमैप</h2>
+    {% elif profile.education_level == 'Undergraduate' %}
+    <h2 class="font-bold text-lg mb-3 text-brand-900">अपने करियर को आगे बढ़ाएं</h2>
+    {% elif profile.education_level == 'Postgraduate' %}
+    <h2 class="font-bold text-lg mb-3 text-brand-900">पोस्टग्रेजुएट के बाद अगले कदम</h2>
+    {% elif profile.education_level == 'Diploma' %}
+    <h2 class="font-bold text-lg mb-3 text-brand-900">डिप्लोमा के बाद रोडमैप</h2>
+    {% else %}
+    <h2 class="font-bold text-lg mb-3 text-brand-900">आपका नेक्स्ट स्टेप</h2>
+    {% endif %}
+
+    {% if next_steps.stream %}
+    <p class="text-sm text-brand-800 mb-2">आपकी रुचियों के आधार पर सबसे अच्छा स्ट्रीम: <span class="font-semibold">{{ next_steps.stream }}</span></p>
+    {% endif %}
+    {% if next_steps.subjects %}
+    <p class="text-sm text-brand-800 mb-2">इस स्ट्रीम में मुख्य विषय: {{ next_steps.subjects | join(', ') }}</p>
+    {% endif %}
+    {% if next_steps.actions %}
+    <ul class="list-disc list-inside text-sm text-brand-800 space-y-1 mb-3">
+      {% for action in next_steps.actions %}
+      <li>{{ action }}</li>
+      {% endfor %}
+    </ul>
+    {% endif %}
+    {% if next_steps.career_tips %}
+    <p class="text-xs text-brand-600">{{ next_steps.career_tips | join(' ') }}</p>
+    {% endif %}
+    <div class="mt-4 flex gap-2">
+      <a href="{{ url_for('assistant_page') }}" class="tap px-4 py-2 rounded-lg bg-brand-600 text-white text-sm font-semibold active:bg-brand-700">सहायक से बात करें</a>
+      <a href="{{ url_for('onboarding') }}" class="tap px-4 py-2 rounded-lg bg-white border border-brand-300 text-sm font-semibold text-brand-700 active:border-brand-400">रुचियां अपडेट करें</a>
+    </div>
+  </div>
+  {% endif %}
+
   <div class="grid lg:grid-cols-2 gap-8">
 
     <section>

@@ -54,6 +54,25 @@
     <p class="text-amber-900 text-sm leading-relaxed">{{ career.ai_impact }}</p>
   </div>
 
+  {% if profile and profile.education_level == 'Class 9-10' %}
+  <div class="mt-4 bg-brand-50 border border-brand-200 rounded-xl p-5">
+    <h2 class="font-bold mb-2 text-brand-900">क्लास 10 के लिए टिप्स</h2>
+    <p class="text-brand-800 text-sm leading-relaxed">
+      यह करियर लंबे समय का लक्ष्य है। सबसे पहले अपनी स्ट्रीम चुनें — आपकी रुचियों के आधार पर 
+      {% if 'tech' in (profile.interests or '') or 'engineering' in (profile.interests or '') or 'science' in (profile.interests or '') %}
+      Science (PCM/PCB)
+      {% elif 'business' in (profile.interests or '') or 'law' in (profile.interests or '') %}
+      Commerce या Arts
+      {% elif 'creative' in (profile.interests or '') or 'social' in (profile.interests or '') or 'healthcare' in (profile.interests or '') %}
+      Arts/Humanities (या Science अगर मेडिकल है)
+      {% else %}
+      अपनी रुचि के अनुकूल स्ट्रीम
+      {% endif %}
+      सबसे अच्छा विकल्प है। इसके बाद उस फील्ड की बेसिक पढ़ाई शुरू करें।
+    </p>
+  </div>
+  {% endif %}
+
   <div class="mt-8 hidden sm:flex gap-3">
     <a href="{{ url_for('scholarships_list') }}" class="tap px-5 py-2.5 rounded-lg bg-brand-600 text-white font-semibold active:bg-brand-700">Find funding for this path &rarr;</a>
   </div>
