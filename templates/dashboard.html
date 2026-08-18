@@ -1,46 +1,43 @@
 {% extends "base.html" %}
-{% block title %}My Roadmap — PathWise India{% endblock %}
+{% block title %}{% if readonly %}{{ t('share.readonly') }}{% else %}{{ t('dash.title') }}{% endif %} — PathWise India{% endblock %}
 {% block content %}
 <div class="max-w-6xl mx-auto px-4 sm:px-6 py-6 sm:py-10">
   <div class="flex flex-wrap items-start justify-between gap-4 mb-6 sm:mb-8">
     <div>
+      {% if readonly %}
+      <span class="badge bg-slate-100 text-slate-600 mb-3">{{ t('share.readonly') }}</span>
+      <h1 class="text-2xl sm:text-3xl font-extrabold">{{ share_user.name }}'s roadmap</h1>
+      {% else %}
       <span class="badge bg-brand-100 text-brand-700 mb-3">Step 5 · Stay on Track</span>
-      <h1 class="text-2xl sm:text-3xl font-extrabold">Hi {{ current_user.name.split(' ')[0] }}, here's your roadmap</h1>
+      <h1 class="text-2xl sm:text-3xl font-extrabold">Hi {{ current_user.name.split(' ')[0] }}, {{ t('dash.title') }}</h1>
+      {% endif %}
     </div>
-    <div class="flex gap-2">
-      <a href="{{ url_for('assistant_page') }}" class="tap px-4 py-2 rounded-lg bg-brand-600 text-white text-sm font-semibold active:bg-brand-700">Ask the assistant</a>
-      <a href="{{ url_for('onboarding') }}" class="tap px-4 py-2 rounded-lg bg-white border border-slate-300 text-sm font-semibold text-slate-700 active:border-brand-400">Edit profile</a>
+    {% if not readonly %}
+    <div class="flex flex-wrap gap-2">
+      <a href="{{ url_for('assistant_page') }}" class="tap px-4 py-2 rounded-lg bg-brand-600 text-white text-sm font-semibold">{{ t('common.ask_assistant') }}</a>
+      <a href="{{ url_for('onboarding') }}" class="tap px-4 py-2 rounded-lg bg-white border border-slate-300 text-sm font-semibold text-slate-700">{{ t('common.edit_profile') }}</a>
+      <a href="{{ url_for('interest_quiz') }}" class="tap px-4 py-2 rounded-lg bg-white border border-slate-300 text-sm font-semibold text-slate-700">Interest quiz</a>
     </div>
+    {% endif %}
   </div>
 
   {% if not profile %}
   <div class="bg-amber-50 border border-amber-200 rounded-2xl p-5 mb-8">
-    <p class="text-amber-900 font-medium">Complete your profile to get personalized career recommendations and scholarship matches.</p>
-    <a href="{{ url_for('onboarding') }}" class="tap inline-block mt-3 px-4 py-2.5 rounded-xl bg-amber-500 text-white font-semibold text-sm active:bg-amber-600">Complete profile</a>
+    <p class="text-amber-900 font-medium">{{ t('dash.no_profile') }}</p>
+    {% if not readonly %}
+    <a href="{{ url_for('onboarding') }}" class="tap inline-block mt-3 px-4 py-2.5 rounded-xl bg-amber-500 text-white font-semibold text-sm">{{ t('dash.complete_profile') }}</a>
+    {% endif %}
   </div>
   {% endif %}
 
   {% if next_steps and profile %}
   <div class="bg-brand-50 border border-brand-200 rounded-2xl p-5 sm:p-6 mb-8">
-    {% if profile.education_level == 'Class 9-10' %}
-    <h2 class="font-bold text-lg mb-3 text-brand-900">क्लास 10 के बाद आपका रोडमैप</h2>
-    {% elif profile.education_level == 'Class 11-12' %}
-    <h2 class="font-bold text-lg mb-3 text-brand-900">क्लास 12 के बाद आपका रोडमैप</h2>
-    {% elif profile.education_level == 'Undergraduate' %}
-    <h2 class="font-bold text-lg mb-3 text-brand-900">अपने करियर को आगे बढ़ाएं</h2>
-    {% elif profile.education_level == 'Postgraduate' %}
-    <h2 class="font-bold text-lg mb-3 text-brand-900">पोस्टग्रेजुएट के बाद अगले कदम</h2>
-    {% elif profile.education_level == 'Diploma' %}
-    <h2 class="font-bold text-lg mb-3 text-brand-900">डिप्लोमा के बाद रोडमैप</h2>
-    {% else %}
-    <h2 class="font-bold text-lg mb-3 text-brand-900">आपका नेक्स्ट स्टेप</h2>
-    {% endif %}
-
+    <h2 class="font-bold text-lg mb-3 text-brand-900">{% if lang == 'hi' %}आपका नेक्स्ट स्टेप{% else %}Your next steps{% endif %}</h2>
     {% if next_steps.stream %}
-    <p class="text-sm text-brand-800 mb-2">आपकी रुचियों के आधार पर सबसे अच्छा स्ट्रीम: <span class="font-semibold">{{ next_steps.stream }}</span></p>
+    <p class="text-sm text-brand-800 mb-2">Suggested stream: <span class="font-semibold">{{ next_steps.stream }}</span></p>
     {% endif %}
     {% if next_steps.subjects %}
-    <p class="text-sm text-brand-800 mb-2">इस स्ट्रीम में मुख्य विषय: {{ next_steps.subjects | join(', ') }}</p>
+    <p class="text-sm text-brand-800 mb-2">Subjects: {{ next_steps.subjects | join(', ') }}</p>
     {% endif %}
     {% if next_steps.actions %}
     <ul class="list-disc list-inside text-sm text-brand-800 space-y-1 mb-3">
@@ -52,81 +49,136 @@
     {% if next_steps.career_tips %}
     <p class="text-xs text-brand-600">{{ next_steps.career_tips | join(' ') }}</p>
     {% endif %}
-    <div class="mt-4 flex gap-2">
-      <a href="{{ url_for('assistant_page') }}" class="tap px-4 py-2 rounded-lg bg-brand-600 text-white text-sm font-semibold active:bg-brand-700">सहायक से बात करें</a>
-      <a href="{{ url_for('onboarding') }}" class="tap px-4 py-2 rounded-lg bg-white border border-brand-300 text-sm font-semibold text-brand-700 active:border-brand-400">रुचियां अपडेट करें</a>
-    </div>
   </div>
   {% endif %}
 
-  <div class="grid lg:grid-cols-2 gap-8">
+  {% if deadlines %}
+  <section class="mb-8">
+    <h2 class="font-bold text-lg mb-3">{{ t('dash.deadlines') }}</h2>
+    <div class="space-y-2">
+      {% for d in deadlines %}
+      <a href="{{ d.href }}" class="tap flex justify-between gap-3 bg-white border border-slate-200 rounded-xl px-4 py-3 text-sm">
+        <span class="font-semibold">{{ d.name }}</span>
+        <span class="badge {% if d.closed %}bg-slate-200 text-slate-500{% else %}bg-red-50 text-red-700{% endif %}">{{ 'Closed' if d.closed else d.date.isoformat() }}</span>
+      </a>
+      {% endfor %}
+    </div>
+    <p class="text-xs text-slate-400 mt-2">In-app deadlines. Email/WhatsApp alerts can be added later when SMTP is configured.</p>
+  </section>
+  {% endif %}
 
+  {% if checklist and not readonly %}
+  <section class="mb-8">
+    <h2 class="font-bold text-lg mb-3">{{ t('dash.checklist') }}</h2>
+    <ul class="space-y-2">
+      {% for item in checklist %}
+      <li class="bg-white border border-slate-200 rounded-xl px-4 py-2.5 flex items-center gap-3">
+        <form method="POST" action="{{ url_for('toggle_checklist', item_id=item.id) }}">
+          <button type="submit" class="w-5 h-5 rounded border {% if item.done %}bg-brand-600 border-brand-600{% else %}border-slate-300{% endif %}" aria-label="toggle"></button>
+        </form>
+        <span class="text-sm {% if item.done %}line-through text-slate-400{% endif %}">{{ item.label }}</span>
+      </li>
+      {% endfor %}
+    </ul>
+  </section>
+  {% endif %}
+
+  {% if not readonly %}
+  <section class="mb-8 bg-white border border-slate-200 rounded-2xl p-5">
+    <h2 class="font-bold text-lg mb-2">{{ t('dash.share') }}</h2>
+    {% if share_token %}
+    <p class="text-sm text-slate-600 break-all">{{ request.host_url.rstrip('/') }}{{ url_for('shared_roadmap', token=share_token) }}</p>
+    {% else %}
+    <form method="POST" action="{{ url_for('dashboard_share') }}">
+      <button type="submit" class="tap px-4 py-2 rounded-lg bg-white border border-slate-300 text-sm font-semibold">Create a read-only link</button>
+    </form>
+    {% endif %}
+  </section>
+  {% endif %}
+
+  <div class="grid lg:grid-cols-2 gap-8">
     <section>
-      <h2 class="font-bold text-lg mb-3">Your saved scholarships</h2>
+      <h2 class="font-bold text-lg mb-3">{{ t('dash.saved_sch') }}</h2>
       {% if saved_scholarships %}
       <div class="space-y-3">
         {% for s in saved_scholarships %}
-        <a href="{{ url_for('scholarship_detail', scholarship_id=s.id) }}" class="tap block bg-white border border-slate-200 rounded-xl p-4 shadow-sm active:border-brand-400">
-          <div class="flex justify-between items-start gap-2">
-            <div>
-              <div class="font-semibold">{{ s.name }}</div>
-              <div class="text-xs text-slate-500">{{ s.provider }}</div>
-            </div>
-            <span class="badge {% if s.deadline < today %}bg-slate-200 text-slate-500{% else %}bg-red-50 text-red-700{% endif %} shrink-0">
-              {% if s.deadline < today %}Closed{% else %}Due {{ s.deadline }}{% endif %}
-            </span>
-          </div>
-        </a>
+        <div class="bg-white border border-slate-200 rounded-xl p-4 shadow-sm">
+          <a href="{{ url_for('scholarship_detail', scholarship_id=s.id) }}" class="font-semibold hover:text-brand-700">{{ s.name }}</a>
+          <div class="text-xs text-slate-500">{{ s.provider }} · {{ s.deadline }}</div>
+          {% if not readonly %}
+          <form method="POST" action="{{ url_for('set_scholarship_status', scholarship_id=s.id) }}" class="mt-2">
+            <select name="status" onchange="this.form.submit()" class="text-xs rounded-lg border border-slate-300 px-2 py-1">
+              {% for key, label in statuses %}
+              <option value="{{ key }}" {% if s.save_status == key %}selected{% endif %}>{{ label }}</option>
+              {% endfor %}
+            </select>
+          </form>
+          {% endif %}
+        </div>
         {% endfor %}
       </div>
       {% else %}
-      <p class="text-sm text-slate-500 bg-white border border-slate-200 rounded-xl p-4">No scholarships saved yet. <a href="{{ url_for('scholarships_list') }}" class="text-brand-700 font-semibold hover:underline">Browse scholarships &rarr;</a></p>
+      <p class="text-sm text-slate-500 bg-white border border-slate-200 rounded-xl p-4">No scholarships saved yet. <a href="{{ url_for('scholarships_list') }}" class="text-brand-700 font-semibold hover:underline">Browse →</a></p>
       {% endif %}
     </section>
 
     <section>
-      <h2 class="font-bold text-lg mb-3">Your saved careers</h2>
+      <h2 class="font-bold text-lg mb-3">{{ t('dash.saved_careers') }}</h2>
       {% if saved_careers %}
       <div class="space-y-3">
         {% for c in saved_careers %}
-        <a href="{{ url_for('career_detail', slug=c.slug) }}" class="tap block bg-white border border-slate-200 rounded-xl p-4 shadow-sm active:border-brand-400">
+        <a href="{{ url_for('career_detail', slug=c.slug) }}" class="tap block bg-white border border-slate-200 rounded-xl p-4 shadow-sm">
           <div class="font-semibold">{{ c.name }}</div>
-          <div class="text-xs text-slate-500">₹{{ '{:,}'.format(c.salary_min) }}–{{ '{:,}'.format(c.salary_max) }} &middot; {{ c.demand }} demand</div>
+          <div class="text-xs text-slate-500">{% if c.salary_min %}₹{{ '{:,}'.format(c.salary_min) }}–{{ '{:,}'.format(c.salary_max or 0) }} · {% endif %}{{ c.demand }} demand</div>
         </a>
         {% endfor %}
       </div>
       {% else %}
-      <p class="text-sm text-slate-500 bg-white border border-slate-200 rounded-xl p-4">No careers saved yet. <a href="{{ url_for('careers_list') }}" class="text-brand-700 font-semibold hover:underline">Browse careers &rarr;</a></p>
+      <p class="text-sm text-slate-500 bg-white border border-slate-200 rounded-xl p-4">No careers saved yet. <a href="{{ url_for('careers_list') }}" class="text-brand-700 font-semibold hover:underline">Browse →</a></p>
       {% endif %}
     </section>
-
   </div>
+
+  <section class="mt-8">
+    <h2 class="font-bold text-lg mb-3">{{ t('dash.saved_jobs') }}</h2>
+    {% if saved_jobs %}
+    <div class="space-y-3">
+      {% for j in saved_jobs %}
+      <a href="{{ url_for('gov_job_detail', job_id=j.id) }}" class="tap block bg-white border border-slate-200 rounded-xl p-4">
+        <div class="font-semibold">{{ j.exam_name or j.job_title }}</div>
+        <div class="text-xs text-slate-500">{{ j.commission or j.department }} · {{ j.apply_end_date or '' }}</div>
+      </a>
+      {% endfor %}
+    </div>
+    {% else %}
+    <p class="text-sm text-slate-500 bg-white border border-slate-200 rounded-xl p-4">No government jobs saved. <a href="{{ url_for('gov_jobs_list') }}" class="text-brand-700 font-semibold hover:underline">Browse →</a></p>
+    {% endif %}
+  </section>
 
   {% if profile %}
   <div class="grid lg:grid-cols-2 gap-8 mt-10">
-
     <section>
-      <h2 class="font-bold text-lg mb-3">Recommended careers for you</h2>
+      <h2 class="font-bold text-lg mb-3">{{ t('dash.rec_careers') }}</h2>
       {% if recommended_careers %}
       <div class="space-y-3">
-        {% for c in recommended_careers[:5] %}
-        <a href="{{ url_for('career_detail', slug=c.slug) }}" class="tap block bg-white border border-slate-200 rounded-xl p-4 shadow-sm active:border-brand-400">
+        {% for c in recommended_careers %}
+        <a href="{{ url_for('career_detail', slug=c.slug) }}" class="tap block bg-white border border-slate-200 rounded-xl p-4 shadow-sm">
           <div class="font-semibold">{{ c.name }}</div>
-          <div class="text-xs text-slate-500 line-clamp-1">{{ c.description }}</div>
+          <div class="text-xs text-slate-500">{{ (c.match_reasons or []) | join(' · ') }}</div>
         </a>
         {% endfor %}
       </div>
       {% else %}
-      <p class="text-sm text-slate-500 bg-white border border-slate-200 rounded-xl p-4">No recommendations yet &mdash; select some interests in your profile.</p>
+      <p class="text-sm text-slate-500 bg-white border border-slate-200 rounded-xl p-4">No recommendations yet — add interests or take the quiz.</p>
       {% endif %}
     </section>
 
     <section>
-      <h2 class="font-bold text-lg mb-3">Scholarships matched to you</h2>
+      <h2 class="font-bold text-lg mb-3">{{ t('dash.matched_sch') }}</h2>
       {% if matched_scholarships %}
       <div class="space-y-3">
         {% for s in matched_scholarships %}
-        <a href="{{ url_for('scholarship_detail', scholarship_id=s.id) }}" class="tap block bg-white border border-slate-200 rounded-xl p-4 shadow-sm active:border-brand-400">
+        <a href="{{ url_for('scholarship_detail', scholarship_id=s.id) }}" class="tap block bg-white border border-slate-200 rounded-xl p-4 shadow-sm">
           <div class="flex justify-between items-start gap-2">
             <div class="font-semibold">{{ s.name }}</div>
             <span class="badge bg-red-50 text-red-700 shrink-0">Due {{ s.deadline }}</span>
@@ -134,12 +186,11 @@
         </a>
         {% endfor %}
       </div>
-      <a href="{{ url_for('scholarships_list', matches=1) }}" class="text-sm text-brand-700 font-semibold hover:underline mt-3 inline-block">See all matches &rarr;</a>
+      <a href="{{ url_for('scholarships_list', matches=1) }}" class="text-sm text-brand-700 font-semibold hover:underline mt-3 inline-block">{{ t('dash.see_all_matches') }} →</a>
       {% else %}
       <p class="text-sm text-slate-500 bg-white border border-slate-200 rounded-xl p-4">No matches found yet based on your current profile.</p>
       {% endif %}
     </section>
-
   </div>
   {% endif %}
 

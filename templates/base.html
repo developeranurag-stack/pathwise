@@ -57,25 +57,31 @@
       <span>PathWise <span class="text-slate-400 font-medium hidden sm:inline">India</span></span>
     </a>
     <div class="hidden sm:flex items-center gap-1 text-sm font-medium mr-auto ml-8">
-      <a href="{{ url_for('careers_list') }}" class="px-3 py-2 rounded-lg text-slate-600 hover:text-brand-700 hover:bg-brand-50">Careers</a>
-      <a href="{{ url_for('scholarships_list') }}" class="px-3 py-2 rounded-lg text-slate-600 hover:text-brand-700 hover:bg-brand-50">Scholarships</a>
-      <a href="{{ url_for('gov_jobs_list') }}" class="px-3 py-2 rounded-lg text-slate-600 hover:text-brand-700 hover:bg-brand-50">Govt Jobs</a>
+      <a href="{{ url_for('careers_list') }}" class="px-3 py-2 rounded-lg text-slate-600 hover:text-brand-700 hover:bg-brand-50">{{ t('nav.careers') }}</a>
+      <a href="{{ url_for('scholarships_list') }}" class="px-3 py-2 rounded-lg text-slate-600 hover:text-brand-700 hover:bg-brand-50">{{ t('nav.scholarships') }}</a>
+      <a href="{{ url_for('gov_jobs_list') }}" class="px-3 py-2 rounded-lg text-slate-600 hover:text-brand-700 hover:bg-brand-50">{{ t('nav.gov_jobs') }}</a>
+      <a href="{{ url_for('exams_calendar') }}" class="px-3 py-2 rounded-lg text-slate-600 hover:text-brand-700 hover:bg-brand-50">{{ t('nav.exams') }}</a>
       {% if current_user %}
-      <a href="{{ url_for('dashboard') }}" class="px-3 py-2 rounded-lg text-slate-600 hover:text-brand-700 hover:bg-brand-50">My Roadmap</a>
-      <a href="{{ url_for('assistant_page') }}" class="px-3 py-2 rounded-lg text-slate-600 hover:text-brand-700 hover:bg-brand-50">सहायक</a>
+      <a href="{{ url_for('dashboard') }}" class="px-3 py-2 rounded-lg text-slate-600 hover:text-brand-700 hover:bg-brand-50">{{ t('nav.roadmap') }}</a>
+      <a href="{{ url_for('assistant_page') }}" class="px-3 py-2 rounded-lg text-slate-600 hover:text-brand-700 hover:bg-brand-50">{{ t('nav.assistant') }}</a>
       {% endif %}
       {% if current_user and current_user.is_admin %}
-      <a href="{{ url_for('admin_home') }}" class="px-3 py-2 rounded-lg text-slate-600 hover:text-brand-700 hover:bg-brand-50">Admin</a>
+      <a href="{{ url_for('admin_home') }}" class="px-3 py-2 rounded-lg text-slate-600 hover:text-brand-700 hover:bg-brand-50">{{ t('nav.admin') }}</a>
       {% endif %}
     </div>
     <div class="flex items-center gap-1">
+      <form method="POST" action="{{ url_for('set_language') }}" class="hidden sm:block">
+        <input type="hidden" name="next" value="{{ request.path }}">
+        <input type="hidden" name="lang" value="{{ 'en' if lang == 'hi' else 'hi' }}">
+        <button type="submit" class="px-2 py-1.5 rounded-lg text-xs font-semibold text-slate-500 hover:bg-slate-100 tap" title="{{ t('common.language') }}">{{ 'EN' if lang == 'hi' else 'हिं' }}</button>
+      </form>
       {% if current_user %}
-        <a href="{{ url_for('logout') }}" class="w-9 h-9 rounded-full flex items-center justify-center text-slate-500 hover:bg-slate-100 tap" aria-label="Log out">
+        <a href="{{ url_for('logout') }}" class="w-9 h-9 rounded-full flex items-center justify-center text-slate-500 hover:bg-slate-100 tap" aria-label="{{ t('nav.logout') }}">
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-5 h-5"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
         </a>
       {% else %}
-        <a href="{{ url_for('login') }}" class="px-3 py-1.5 rounded-lg text-sm font-semibold text-slate-600 hover:bg-slate-100 tap">Log in</a>
-        <a href="{{ url_for('register') }}" class="px-3.5 py-1.5 rounded-lg bg-brand-600 text-white text-sm font-semibold shadow-sm tap">Get Started</a>
+        <a href="{{ url_for('login') }}" class="px-3 py-1.5 rounded-lg text-sm font-semibold text-slate-600 hover:bg-slate-100 tap">{{ t('nav.login') }}</a>
+        <a href="{{ url_for('register') }}" class="px-3.5 py-1.5 rounded-lg bg-brand-600 text-white text-sm font-semibold shadow-sm tap">{{ t('nav.signup') }}</a>
       {% endif %}
     </div>
   </div>
@@ -101,19 +107,30 @@
 
 <footer class="hidden sm:block border-t border-slate-200 bg-white">
   <div class="max-w-6xl mx-auto px-4 sm:px-6 py-8 text-sm text-slate-500 flex flex-col sm:flex-row justify-between gap-2">
-    <div>PathWise India &mdash; Discover your future. Find the funding to reach it.</div>
-    <div>MVP demo &middot; scholarship data is illustrative, verify details on official portals before applying.</div>
+    <div>{{ t('footer.tagline') }}</div>
+    <div>{{ t('footer.disclaimer') }}</div>
   </div>
 </footer>
 
 <nav class="tabbar-pad fixed bottom-0 inset-x-0 z-50 bg-white/95 backdrop-blur border-t border-slate-200 sm:hidden">
-  <div class="grid grid-cols-4 h-16">
+  <div class="grid grid-cols-5 h-16">
+    {% if current_user %}
     {% set nav_items = [
-      ('index', url_for('index'), 'Home', 'home'),
-      ('careers_list', url_for('careers_list'), 'Careers', 'briefcase'),
-      ('scholarships_list', url_for('scholarships_list'), 'Funding', 'gift'),
-      (('dashboard' if current_user else 'login'), (url_for('dashboard') if current_user else url_for('login')), ('Roadmap' if current_user else 'Log in'), ('map' if current_user else 'user')),
+      ('careers_list', url_for('careers_list'), t('nav.careers'), 'briefcase'),
+      ('gov_jobs_list', url_for('gov_jobs_list'), t('nav.jobs'), 'jobs'),
+      ('assistant_page', url_for('assistant_page'), t('nav.ask'), 'ask'),
+      ('scholarships_list', url_for('scholarships_list'), t('nav.funding'), 'gift'),
+      ('dashboard', url_for('dashboard'), t('nav.roadmap'), 'map'),
     ] %}
+    {% else %}
+    {% set nav_items = [
+      ('index', url_for('index'), t('nav.home'), 'home'),
+      ('careers_list', url_for('careers_list'), t('nav.careers'), 'briefcase'),
+      ('gov_jobs_list', url_for('gov_jobs_list'), t('nav.jobs'), 'jobs'),
+      ('scholarships_list', url_for('scholarships_list'), t('nav.funding'), 'gift'),
+      ('login', url_for('login'), t('nav.login'), 'user'),
+    ] %}
+    {% endif %}
     {% for endpoint, href, label, icon in nav_items %}
     {% set active = request.endpoint == endpoint %}
     <a href="{{ href }}" class="tap flex flex-col items-center justify-center gap-0.5 {% if active %}text-brand-700{% else %}text-slate-400{% endif %}">
@@ -123,6 +140,10 @@
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="{% if active %}currentColor{% else %}none{% endif %}" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-6 h-6"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg>
       {% elif icon == 'gift' %}
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="{% if active %}currentColor{% else %}none{% endif %}" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-6 h-6"><polyline points="20 12 20 22 4 22 4 12"/><rect x="2" y="7" width="20" height="5"/><line x1="12" y1="22" x2="12" y2="7"/><path d="M12 7H7.5a2.5 2.5 0 0 1 0-5C11 2 12 7 12 7z"/><path d="M12 7h4.5a2.5 2.5 0 0 0 0-5C13 2 12 7 12 7z"/></svg>
+      {% elif icon == 'jobs' %}
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="{% if active %}currentColor{% else %}none{% endif %}" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-6 h-6"><path d="M3 21h18"/><path d="M5 21V7h6v14"/><path d="M15 21V3h4v18"/><path d="M9 10h.01"/><path d="M9 14h.01"/></svg>
+      {% elif icon == 'ask' %}
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="{% if active %}currentColor{% else %}none{% endif %}" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-6 h-6"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
       {% elif icon == 'map' %}
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="{% if active %}currentColor{% else %}none{% endif %}" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-6 h-6"><polygon points="3 6 9 3 15 6 21 3 21 18 15 21 9 18 3 21"/><line x1="9" y1="3" x2="9" y2="18"/><line x1="15" y1="6" x2="15" y2="21"/></svg>
       {% else %}

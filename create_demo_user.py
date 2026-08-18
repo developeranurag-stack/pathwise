@@ -21,9 +21,12 @@ DEMO_PROFILE = dict(
     gender="Female",
     income_bracket=280000,
     interests=["tech", "science"],
+    stream="pcm",
+    board="CBSE",
+    marks_band="75_90",
 )
 
-DEMO_SAVED_CAREER_SLUGS = ["software-engineer", "data-scientist"]
+DEMO_SAVED_CAREER_SLUGS = ["software-engineer", "data-scientist", "registered-nurse"]
 DEMO_SAVED_SCHOLARSHIP_NAMES = [
     "Post-Matric Scholarship for OBC Students",
     "Pragati Scholarship for Girls (AICTE)",
@@ -50,15 +53,17 @@ def main():
 
     conn.execute(
         """INSERT INTO profiles (user_id, education_level, state, category, gender,
-           income_bracket, interests)
-           VALUES (?,?,?,?,?,?,?)
+           income_bracket, interests, stream, board, marks_band)
+           VALUES (?,?,?,?,?,?,?,?,?,?)
            ON CONFLICT(user_id) DO UPDATE SET
              education_level=excluded.education_level, state=excluded.state,
              category=excluded.category, gender=excluded.gender,
-             income_bracket=excluded.income_bracket, interests=excluded.interests""",
+             income_bracket=excluded.income_bracket, interests=excluded.interests,
+             stream=excluded.stream, board=excluded.board, marks_band=excluded.marks_band""",
         (user_id, DEMO_PROFILE["education_level"], DEMO_PROFILE["state"],
          DEMO_PROFILE["category"], DEMO_PROFILE["gender"], DEMO_PROFILE["income_bracket"],
-         json.dumps(DEMO_PROFILE["interests"])),
+         json.dumps(DEMO_PROFILE["interests"]), DEMO_PROFILE["stream"],
+         DEMO_PROFILE["board"], DEMO_PROFILE["marks_band"]),
     )
 
     for slug in DEMO_SAVED_CAREER_SLUGS:

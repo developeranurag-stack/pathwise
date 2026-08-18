@@ -14,17 +14,18 @@
   <div class="flex flex-col sm:flex-row sm:flex-wrap justify-center gap-3 max-w-sm sm:max-w-none mx-auto">
     <a href="{{ url_for('register') }}" class="tap px-6 py-3.5 sm:py-3 rounded-2xl sm:rounded-xl bg-brand-600 text-white font-semibold shadow-sm active:bg-brand-700">Start your journey</a>
     <a href="{{ url_for('careers_list') }}" class="tap px-6 py-3.5 sm:py-3 rounded-2xl sm:rounded-xl bg-white border border-slate-300 font-semibold text-slate-700 active:border-brand-400">Explore careers</a>
+    <a href="{{ url_for('login', next=url_for('assistant_page')) }}" class="tap px-6 py-3.5 sm:py-3 rounded-2xl sm:rounded-xl bg-white border border-slate-300 font-semibold text-slate-700 active:border-brand-400">हिंदी में पूछें</a>
   </div>
 </section>
 
 <section class="max-w-6xl mx-auto px-4 sm:px-6 pb-10 sm:pb-20">
   <div class="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-5 gap-3 sm:gap-4">
     {% set steps = [
-      ("1", "Discover Yourself", "Interest-based assessment to understand what fits you."),
-      ("2", "Explore Careers", "Job outlook, salary ranges, and AI impact for every path."),
-      ("3", "Choose Education", "Degrees, colleges, entrance exams, and costs."),
-      ("4", "Find Funding", "Government, state, NGO and corporate scholarships matched to you."),
-      ("5", "Stay on Track", "A roadmap with deadlines and application checklists.")
+      ("1", "Discover Yourself", "Stream, subjects, and a short interest quiz — not just eight checkboxes."),
+      ("2", "Explore Careers", "Verified salary, demand, skills, AI impact, and related paths."),
+      ("3", "Choose Education", "Stream after 10th, entrance exams, and a short institute list per career."),
+      ("4", "Find Funding", "Scholarships matched to your state, category, income — with reasons."),
+      ("5", "Stay on Track", "Saved items, document checklists, exam calendar, and deadline alerts.")
     ] %}
     {% for num, title, desc in steps %}
     <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 sm:p-5 {% if loop.index == 5 %}col-span-2 sm:col-span-1{% endif %}">

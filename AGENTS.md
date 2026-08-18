@@ -48,9 +48,12 @@ No test/lint/typecheck/build commands exist.
 
 ## Government jobs
 - Read-only UI at `/gov-jobs*` (populated from `gov_job_notifications` + `gov_job_posts`). All historical notifications are kept forever (vacancies recur in following years).
+- Search expands acronyms via `gov_job_aliases.py`, which merges hosts/codes from `../pathwise-mcp/commission_registry.json` when present. Prefer `search_document` / `commission` / `exam_name` when those columns exist.
+- PDF route `_resolve_gov_job_pdf` accepts absolute paths or MCP-relative `stored_pdfs/<file>.pdf` (looks in `../pathwise-mcp/stored_pdfs` or `GOV_JOB_PDF_DIR`).
 - The assistant can search them, show details, and directly ingest new ones via `ingest_gov_job` when user pastes ad text/screenshots (bypasses or supplements MCP).
-- Upload PDFs (admin) to `../pathwise-mcp/tobepicked/` for MCP processing; direct AI ingest also supported via the assistant or `direct_ingest_gov_job.py` script.
+- Upload PDFs (admin) to `../pathwise-mcp/tobepicked/` for MCP processing. The MCP can also fetch advertisement PDFs from registered PSC / exam-board sites (`fetch_commission_notices` / `FETCH_COMMISSIONS=true`).
 - `.mcp.json` points at the MCP server (paths are dev-machine specific).
+- App-facing contract (shared DB, drop folder, search, `exam_kind`): `../pathwise-mcp/INTEGRATING.md`.
 
 ## Scraping / sources (admin only)
 - `/admin/sources/*`: configure URL + parser name; run via POST triggers `scraper.run_source()`.

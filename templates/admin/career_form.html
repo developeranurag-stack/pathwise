@@ -60,6 +60,10 @@
       <label class="block text-sm font-semibold mb-1">Relevant exams</label>
       <input name="exams" value="{{ career.exams if career else '' }}" class="w-full rounded-lg border border-slate-300 px-3 py-2">
     </div>
+    <label class="flex items-center gap-2 text-sm font-semibold">
+      <input type="checkbox" name="is_verified" {% if career and career.is_verified %}checked{% endif %} class="accent-brand-600">
+      Verified (show by default; salary/exam data reviewed)
+    </label>
     <div class="flex gap-3 pt-2">
       <button type="submit" class="tap px-5 py-2.5 rounded-lg bg-brand-600 text-white font-semibold shadow-sm">Save</button>
       <a href="{{ url_for('admin_careers_list') }}" class="tap px-5 py-2.5 rounded-lg border border-slate-300 font-semibold text-slate-700">Cancel</a>

@@ -8,12 +8,36 @@
   </a>
 
   <div class="mt-4">
-    <h1 class="text-2xl sm:text-3xl font-extrabold">{{ job.job_title }}</h1>
-    <p class="text-slate-500 mt-1 text-sm sm:text-base">{{ job.department }}</p>
+    <h1 class="text-2xl sm:text-3xl font-extrabold">{{ hi_tr.job_title if hi_tr and hi_tr.job_title else (job.exam_name or job.job_title) }}</h1>
+    <p class="text-slate-500 mt-1 text-sm sm:text-base">{% if hi_tr and hi_tr.department %}{{ hi_tr.department }}{% else %}{{ job.commission or job.department }}{% endif %}</p>
+    <div class="flex flex-wrap gap-1.5 mt-2">
+      {% if is_open == True %}<span class="badge bg-emerald-50 text-emerald-700">{{ t('jobs.open') }}</span>
+      {% elif is_open == False %}<span class="badge bg-slate-200 text-slate-600">{{ t('jobs.closed') }}</span>{% endif %}
+      {% if is_national %}<span class="badge bg-brand-50 text-brand-700">National exam</span>{% endif %}
+      {% if job.exam_kind %}<span class="badge bg-slate-100 text-slate-700">{{ job.exam_kind }}</span>{% endif %}
+      {% if job.state %}<span class="badge bg-slate-100 text-slate-700">{{ job.state }}</span>{% endif %}
+    </div>
     {% if job.advertisement_number %}
     <p class="text-slate-400 mt-0.5 text-xs">Advertisement No. {{ job.advertisement_number }}</p>
     {% endif %}
   </div>
+
+  {% if current_user %}
+  <form method="POST" action="{{ url_for('toggle_save_gov_job', job_id=job.id) }}" class="mt-4">
+    <button type="submit" class="tap px-4 py-2 rounded-lg font-semibold text-sm {% if is_saved %}bg-brand-100 text-brand-700{% else %}bg-brand-600 text-white{% endif %}">
+      {% if is_saved %}✓ {{ t('common.saved') }}{% else %}+ {{ t('common.save') }}{% endif %}
+    </button>
+  </form>
+  {% endif %}
+
+  {% if eligibility %}
+  <div class="mt-4 bg-white border border-slate-200 rounded-xl p-4 text-sm space-y-1">
+    <h2 class="font-bold mb-2">How this fits you</h2>
+    {% for p in eligibility.passed %}<p class="text-emerald-700">✓ {{ p }}</p>{% endfor %}
+    {% for n in eligibility.notes %}<p class="text-slate-600">{{ n }}</p>{% endfor %}
+    {% for f in eligibility.failed %}<p class="text-red-700">✗ {{ f }}</p>{% endfor %}
+  </div>
+  {% endif %}
 
   <div class="grid sm:grid-cols-2 gap-4 mt-8">
     <div class="bg-white border border-slate-200 rounded-xl p-4">

@@ -14,6 +14,87 @@ import sys
 import db as dbmod
 
 
+def _apply_gov_job_columns(raw_conn):
+    """Ensure MCP search columns exist even if schema.sql is an older copy."""
+    extras = [
+        ("commission", "TEXT"),
+        ("state", "TEXT"),
+        ("exam_name", "TEXT"),
+        ("exam_kind", "TEXT"),
+        ("search_document", "TEXT"),
+        ("translations", "JSONB"),
+        ("age_relaxation_details", "JSONB"),
+        ("nationality", "TEXT"),
+        ("syllabus", "JSONB"),
+        ("exam_date", "TEXT"),
+        ("advertisement_number", "TEXT"),
+        ("application_fee", "TEXT"),
+    ]
+    with raw_conn.cursor() as cur:
+        for column, ddl in extras:
+            cur.execute(
+                f"ALTER TABLE gov_job_notifications ADD COLUMN IF NOT EXISTS {column} {ddl}"
+            )
+        cur.execute("ALTER TABLE gov_job_posts ADD COLUMN IF NOT EXISTS translations JSONB")
+    raw_conn.commit()
+
+
+def init_schema_and_seeds():
+    """Rebuild schema + seed without importing the Flask app.
+
+    `import main` used to do this as a side effect of module import. That loads
+    the whole web app, prints nothing, and only commits after all ~890 careers
+    are inserted — so a Ctrl-C / timeout leaves an empty schema.
+    """
+    print("Applying schema.sql ...", flush=True)
+    created = dbmod.init_db()
+    print(f"  schema {'created' if created else 'already present'}", flush=True)
+
+    raw = dbmod.connect()
+    try:
+        _apply_gov_job_columns(raw)
+    finally:
+        raw.close()
+
+    from seed_data import CAREERS, SCHOLARSHIPS, seed_careers, seed_scholarships
+
+    conn = dbmod.Connection(dbmod.connect())
+    try:
+        career_count = conn.execute("SELECT COUNT(*) AS n FROM careers").fetchone()["n"]
+        if career_count < len(CAREERS):
+            print(
+                f"Seeding careers ({len(CAREERS)} total, {career_count} already present)...",
+                flush=True,
+            )
+            seed_careers(
+                conn,
+                CAREERS,
+                progress=lambda i, total: print(f"  {i}/{total} careers", flush=True),
+            )
+            conn.commit()
+        else:
+            print(f"Careers already seeded ({career_count}).", flush=True)
+
+        sch_count = conn.execute("SELECT COUNT(*) AS n FROM scholarships").fetchone()["n"]
+        if sch_count == 0:
+            print(f"Seeding {len(SCHOLARSHIPS)} scholarships...", flush=True)
+            seed_scholarships(conn, SCHOLARSHIPS)
+            conn.commit()
+        else:
+            print(f"Scholarships already seeded ({sch_count}).", flush=True)
+
+        from content_seed import seed_app_content
+        print("Seeding exam calendar + verified career extras...", flush=True)
+        seed_app_content(conn)
+        conn.commit()
+
+        n_careers = conn.execute("SELECT COUNT(*) AS n FROM careers").fetchone()["n"]
+        n_sch = conn.execute("SELECT COUNT(*) AS n FROM scholarships").fetchone()["n"]
+        print(f"Done. careers={n_careers} scholarships={n_sch}", flush=True)
+    finally:
+        conn.close()
+
+
 def main():
     if not dbmod.DATABASE_URL:
         print("ERROR: DATABASE_URL not set (see .env)")
@@ -27,6 +108,7 @@ def main():
     print()
     print("This will run:  DROP SCHEMA public CASCADE;  CREATE SCHEMA public;")
     print("ALL tables, views, data, and custom types will be permanently deleted.")
+    print("Government job notifications are also deleted and are not re-seeded.")
     confirm = input("Type 'CLEARDB' to confirm: ").strip()
     if confirm != "CLEARDB":
         print("Aborted.")
@@ -38,15 +120,15 @@ def main():
             cur.execute("DROP SCHEMA IF EXISTS public CASCADE;")
             cur.execute("CREATE SCHEMA public;")
         conn.commit()
-        print("\nDatabase cleared. Initializing schema + seeds...")
+        print("\nDatabase cleared. Initializing schema + seeds...", flush=True)
     finally:
         conn.close()
 
-    # Importing main executes its top-level init_db() which (re)creates the schema
-    # from schema.sql and seeds careers/scholarships (tables are empty after the drop).
-    import main
+    init_schema_and_seeds()
 
     print("Database cleared and initialized successfully.")
+    print("Users and gov-job rows were wiped. Recreate a demo login with:")
+    print("  python create_demo_user.py")
     print("Ready. Start the server with: python main.py")
 
 

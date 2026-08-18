@@ -56,6 +56,12 @@
     </button>
     <button type="submit" id="chat-send" class="tap px-4 py-3 rounded-xl bg-brand-600 text-white text-sm font-semibold active:bg-brand-700">भेजें</button>
   </form>
+  <div class="flex flex-wrap gap-2 mt-3" id="chips">
+    <button type="button" class="chip tap px-3 py-1.5 rounded-full bg-white border border-slate-300 text-xs font-semibold">क्लास 10 के बाद क्या लूँ?</button>
+    <button type="button" class="chip tap px-3 py-1.5 rounded-full bg-white border border-slate-300 text-xs font-semibold">मुझे कौन-सी स्कॉलरशिप मिलेगी?</button>
+    <button type="button" class="chip tap px-3 py-1.5 rounded-full bg-white border border-slate-300 text-xs font-semibold">SSC CGL / UPSC CSE</button>
+    <button type="button" class="chip tap px-3 py-1.5 rounded-full bg-white border border-slate-300 text-xs font-semibold">Talk in English</button>
+  </div>
 </div>
 
 <script>
@@ -93,6 +99,11 @@
       if (c.type === 'career') {
         a.href = '/careers/' + encodeURIComponent(c.slug);
         a.innerHTML = '<div class="font-semibold">' + c.name + '</div><div class="text-xs text-slate-500">' + (c.cluster || '') + ' &middot; ' + (c.demand || '') + ' डिमांड</div>';
+      } else if (c.type === 'gov_job') {
+        a.href = '/gov-jobs/' + encodeURIComponent(c.id);
+        var sub = c.subtitle || '';
+        var end = c.apply_end_date ? (sub ? ' &middot; ' : '') + c.apply_end_date + ' तक' : '';
+        a.innerHTML = '<div class="font-semibold">' + (c.title || '') + '</div><div class="text-xs text-slate-500">' + sub + end + '</div>';
       } else {
         a.href = '/scholarships/' + encodeURIComponent(c.id);
         a.innerHTML = '<div class="font-semibold">' + c.name + '</div><div class="text-xs text-slate-500">' + (c.provider || '') + (c.deadline ? ' &middot; ' + c.deadline + ' तक' : '') + '</div>';
@@ -191,6 +202,13 @@
       }
     });
   }
+
+  document.querySelectorAll('.chip').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      input.value = btn.textContent.trim();
+      form.requestSubmit();
+    });
+  });
 
   form.addEventListener('submit', async function (e) {
     e.preventDefault();

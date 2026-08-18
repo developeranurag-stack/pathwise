@@ -21,12 +21,20 @@
     {% endif %}
   </div>
 
-  {% if is_match is not none %}
-    {% if is_match %}
-    <div class="mt-4 badge bg-amber-100 text-amber-800 text-sm py-1.5 px-3">★ Matched to your profile</div>
+  {% if explanation %}
+    {% if explanation.matched %}
+    <div class="mt-4 badge bg-amber-100 text-amber-800 text-sm py-1.5 px-3">★ {{ t('common.matched') }}</div>
     {% else %}
-    <div class="mt-4 badge bg-slate-100 text-slate-600 text-sm py-1.5 px-3">Doesn't match your saved profile's criteria</div>
+    <div class="mt-4 badge bg-slate-100 text-slate-600 text-sm py-1.5 px-3">Doesn't fully match your profile</div>
     {% endif %}
+    <ul class="mt-3 text-sm space-y-1">
+      {% for p in explanation.passed %}
+      <li class="text-emerald-700">✓ {{ p }}</li>
+      {% endfor %}
+      {% for f in explanation.failed %}
+      <li class="text-red-700">✗ {{ f }}</li>
+      {% endfor %}
+    </ul>
   {% endif %}
 
   <p class="text-slate-600 mt-4 text-lg leading-relaxed">{{ sch.description }}</p>
@@ -57,6 +65,17 @@
       <div class="font-bold">{{ sch.gender }}</div>
     </div>
   </div>
+
+  {% if is_saved and current_user %}
+  <form method="POST" action="{{ url_for('set_scholarship_status', scholarship_id=sch.id) }}" class="mt-4 flex items-center gap-2">
+    <label class="text-sm font-semibold">Application status</label>
+    <select name="status" onchange="this.form.submit()" class="rounded-lg border border-slate-300 px-3 py-2 text-sm">
+      {% for key, label in statuses %}
+      <option value="{{ key }}" {% if saved_status == key %}selected{% endif %}>{{ label }}</option>
+      {% endfor %}
+    </select>
+  </form>
+  {% endif %}
 
   <div class="mt-4 bg-white border border-slate-200 rounded-xl p-5">
     <h2 class="font-bold mb-2">Documents required</h2>

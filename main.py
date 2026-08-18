@@ -1,6 +1,7 @@
 import os
 import json
 import re
+import secrets
 import datetime
 from functools import wraps
 
@@ -11,6 +12,15 @@ from werkzeug.utils import secure_filename
 import db as dbmod
 from seed_data import CAREERS, SCHOLARSHIPS, INTEREST_CLUSTERS
 import scraper
+from i18n import translate, normalize_lang
+from matching import (
+    STREAMS, BOARDS, MARKS_BANDS, SUBJECT_OPTIONS, SCHOLARSHIP_STATUSES,
+    parse_list, parse_flexible_date, profile_interests, profile_subjects, profile_riasec,
+    scholarship_matches_profile, scholarship_match_explanation,
+    recommended_career_ids, recommended_career_rows, score_career,
+    next_steps_for_profile, gov_job_is_open, gov_job_eligibility, is_national_job,
+    RIASEC_QUESTIONS, score_riasec,
+)
 # assistant is imported lazily inside the /assistant routes so the app can start
 # without the optional 'openai' package (see requirements.txt and AGENTS.md)
 
@@ -64,7 +74,7 @@ def init_db():
     conn = dbmod.Connection(dbmod.connect())
     try:
         career_count = conn.execute("SELECT COUNT(*) AS n FROM careers").fetchone()["n"]
-        if career_count == 0:
+        if career_count < len(CAREERS):
             from seed_data import seed_careers
             seed_careers(conn, CAREERS)
             conn.commit()
@@ -74,6 +84,10 @@ def init_db():
             from seed_data import seed_scholarships
             seed_scholarships(conn, SCHOLARSHIPS)
             conn.commit()
+
+        from content_seed import seed_app_content
+        seed_app_content(conn)
+        conn.commit()
     finally:
         conn.close()
 
@@ -157,6 +171,11 @@ def save_career_admin(db, career_id, values):
             (career_id, values["ai_impact"]),
         )
 
+    db.execute(
+        "UPDATE careers SET is_verified = ? WHERE career_id = ?",
+        (bool(values.get("is_verified")), career_id),
+    )
+
     db.execute("DELETE FROM career_skills WHERE career_id = ?", (career_id,))
     for name in parse_list(values.get("skills", "")):
         skill_id = upsert_lookup(db, "skills", "skill_id", "name", name, extra={"skill_type": "Technical"})
@@ -214,186 +233,26 @@ def current_profile():
     return row
 
 
+def current_lang():
+    if session.get("lang"):
+        return normalize_lang(session["lang"])
+    profile = current_profile()
+    if profile and profile.get("language_pref"):
+        return normalize_lang(profile["language_pref"])
+    return "en"
+
+
 @app.context_processor
 def inject_user():
-    return dict(current_user=current_user())
+    lang = current_lang()
+    return dict(
+        current_user=current_user(),
+        lang=lang,
+        t=lambda key, default=None: translate(lang, key, default),
+    )
 
 
-# ----------------- MATCHING LOGIC -----------------
-
-def parse_list(value):
-    return [v.strip() for v in value.split(",")] if value else []
-
-
-def scholarship_matches_profile(sch, profile):
-    """Returns True if the scholarship's eligibility criteria fit the student's profile."""
-    if not profile:
-        return False
-
-    edu = profile["education_level"]
-    if sch["education_level"] and edu:
-        # Loose containment match since ranges like "Class 9-12" vs "Class 11-12" overlap in spirit
-        if edu not in sch["education_level"] and sch["education_level"] not in edu:
-            level_tokens = {"Class 9-10": "Class 9", "Class 11-12": "Class 1", "Undergraduate": "UG",
-                             "Postgraduate": "PG", "Diploma": "UG"}
-            token = level_tokens.get(edu)
-            if not token or token not in sch["education_level"]:
-                return False
-
-    states = parse_list(sch["states"])
-    if states and states != ["All"] and profile["state"] not in states:
-        return False
-
-    categories = parse_list(sch["categories"])
-    if categories and categories != ["All"] and profile["category"] not in categories:
-        return False
-
-    if sch["gender"] and sch["gender"] != "All" and profile["gender"] != sch["gender"]:
-        return False
-
-    if sch["income_ceiling"] and profile["income_bracket"]:
-        if profile["income_bracket"] > sch["income_ceiling"]:
-            return False
-
-    return True
-
-
-def recommended_career_ids(profile, db):
-    if not profile or not profile["interests"]:
-        return []
-    interests = json.loads(profile["interests"])
-    if not interests:
-        return []
-    placeholders = ",".join("?" for _ in interests)
-    rows = db.execute(f"SELECT career_id FROM career_app_view WHERE cluster IN ({placeholders})", interests).fetchall()
-    return [r["career_id"] for r in rows]
-
-
-def next_steps_for_profile(profile, db):
-    if not profile:
-        return None
-    edu = profile.get("education_level", "")
-    interests = json.loads(profile["interests"]) if profile.get("interests") else []
-    steps = {"stream": None, "subjects": [], "actions": [], "career_tips": []}
-
-    if edu == "Class 9-10":
-        if not interests:
-            steps["actions"].append("अपनी रुचियों के आधार पर स्ट्रीम चुनें — साइंस, कॉमर्स या आर्ट्स।")
-            return steps
-
-        cluster_stream = {
-            "tech": ("Science (PCM)", "मैथमैटिक्स, फिजिक्स, कंप्यूटर साइंस/ईटी", "जीई जेई मेन, CUET, या स्टेट CET की तैयारी शुरू करें। कोडिंग बासिक्स सीखें (Python/HTML-CSS)।"),
-            "science": ("Science (PCM/PCB)", "फिजिक्स, केमिस्ट्री, बायोलॉजी/गणित", "NEET/JEE की तैयारी के लिए कोचिंग या सेल्फ-स्टडी शुरू करें। प्रयोगात्मक कौशल बनाए रखें।"),
-            "engineering": ("Science (PCM)", "मैथमैटिक्स, फिजिक्स, केमिस्ट्री", "JEE Main/Advanced की तैयारी शुरू करें। स्केचिंग और ऑटोकैड बेसिक सीखें।"),
-            "healthcare": ("Science (PCB)", "बायोलॉजी, केमिस्ट्री, फिजिक्स", "NEET-UG की तैयारी शुरू करें। मेडिकल कोचिंग या बोर्ड के साथ एलनप्लस रजिस्टर करें।"),
-            "business": ("Commerce", "अकाउंटेंसी, बिजनेस स्टडीज, इकॉनॉमिक्स", "CS Foundation या बोर्ड के साथ अकाउंटेंसी बेसिक सीखें।"),
-            "law": ("Arts/Commerce", "पोलिटिकल साइंस, इकॉनॉमिक्स, इंग्लिश", "CLAT के लिए लेगल रीजनिंग और जीजी स्टडी शुरू करें।"),
-            "social": ("Arts/Humanities", "पोलिटिकल साइंस, सोशल साइंस, सांस्कृतिक अध्ययन", "B.Ed या सामाजिक कार्य पाठ्यक्रमों की जांच करें। वॉलंटियर वर्क शुरू करें।"),
-            "creative": ("Arts/Commerce", "ग्राफिक डिजाइन, फाइन आर्ट्स, इंटीरियर डिजाइन बेसिक्स", "NID DAT/NIFT के लिए पोर्टफोलियो शुरू करें। स्केचिंग और कन्वेंशनल टूल्स सीखें।"),
-        }
-
-        tips = []
-        for c in interests:
-            if c in cluster_stream:
-                s, subj, action = cluster_stream[c]
-                if not steps["stream"]:
-                    steps["stream"] = s
-                steps["subjects"].append(subj)
-                steps["actions"].append(action)
-                tips.append(f"{c}: {s} स्ट्रीम चुनें")
-            else:
-                steps["actions"].append(f"{c} के लिए उपयुक्त स्ट्रीम और एग्जाम की जांच करें।")
-
-        steps["career_tips"] = [
-            "अभी क्लास 10 में हो — स्ट्रीम चुनने से पहले हर ऑप्शन के बारे में जानें।",
-            "किसी सेनियर या कोच से परामर्श लें, फिर स्ट्रीम फिक्स करें।",
-            "स्ट्रीम चुनने के बाद ही टारगेटेड एग्जाम की तैयारी शुरू करें।"
-        ]
-        return steps
-
-    if edu == "Class 11-12":
-        if not interests:
-            steps["actions"].append("अपनी स्ट्रीम के एग्जाम की तैयारी फुल-स्पीड जारी रखें।")
-            steps["actions"].append("काउंसलिंग लें और किसी मेनटर से अपनी रोडमैप बनाएं।")
-            return steps
-
-        cluster_action = {
-            "tech": ("जीई जेई मेन/एडवांस्ड या CUET पर तैयारी जारी रखें। साइड में Python/Web बेसिक प्रैक्टिस करें।", "B.Tech/BCA/B.Sc CS के लिए कॉलेज चयन और स्कॉलरशिप की जांच शुरू करें।"),
-            "science": ("NEET/JEE की तैयारी फुल-फोकस में जारी रखें। सभी सब्जेक्ट्स की रिवीजन शेड्यूल बनाएं।", "कोचिंग या ऑनलाइन कोर्स की फीडबैक लें। रिवीजन और मॉक टेस्ट की आदत डालें।"),
-            "engineering": ("JEE Main/Advanced या स्टेट CET की तैयारी बढ़ाएं। प्रैक्टिकल प्रोजेक्ट्स (ऑटोकैड/कोडिंग) शुरू करें।", "Polytechnic/Engineering कॉलेज की शॉर्टलिस्ट बनाएं।"),
-            "healthcare": ("NEET-UG की तैयारी फाइनल स्पर्श में लाएं। बायोलॉजी/केमिस्ट्री के प्रैक्टिकल्स नज़रअंदाज न करें।", "मेडिकल कॉलेज के कटऑफ और सीट ऑलोटमेंट की जांच करें।"),
-            "business": ("कॉमर्स की गड़न मजबूत करें — अकाउंटेंसी, बिजनेस स्टडीज, इकॉनॉमिक्स। CS Foundation/Executive की तैयारी शुरू करें।", "B.Com/BBA/BMS कॉलेज की जांच करें। शॉर्टलिस्ट और एडमिशन प्रोसेस शुरू करें।"),
-            "law": ("CLAT/AILET की तैयारी बढ़ाएं। लेगल रीजनिंग, इंग्लिश और जीजी दैनिक प्रैक्टिस करें।", "5-year integrated LLB कॉलेज की शॉर्टलिस्ट बनाएं।"),
-            "social": ("Humanities सब्जेक्ट्स की गहराई से पढ़ाई करें। सामाजिक कार्य/रिसर्च प्रोजेक्ट्स शुरू करें।", "B.A/B.Ed/सोशल वर्क कॉर्स की जांच करें। वॉलंटियर/इंटर्नशिप के लिए NGO से जुड़ें।"),
-            "creative": ("पोर्टफोलियो बनाना शुरू करें। NID DAT/NIFT/JEE Main Paper 2 की तैयारी जारी रखें।", "डिजाइन स्कूल/कॉलेज की एडमिशन गाइड बनाएं। फ्रीलेंसिंग/इंटर्नशिप के लिए प्लेटफॉर्म जांचें।"),
-        }
-        for c in interests:
-            if c in cluster_action:
-                prep, next_step = cluster_action[c]
-                steps["actions"].append(prep)
-                steps["actions"].append(next_step)
-            else:
-                steps["actions"].append(f"{c} के लिए उपयुक्त UG कॉर्स और एग्जाम की जांच करें।")
-
-        steps["career_tips"] = [
-            "क्लास 11-12 का समय एग्जाम की तैयारी का सबसे महत्वपूर्ण चरण है।",
-            "केवल बुक्स से नहीं, प्रैक्टिकल प्रोजेक्ट्स/इंटर्नशिप भी करें।",
-            "काउंसलिंग से अपनी रोडमैप लगातार अपडेट करें।"
-        ]
-        return steps
-
-    if edu == "Undergraduate":
-        if not interests:
-            steps["actions"].append("अपनी स्पेशलाइजेशन या इंटर्नशिप के लिए प्लान बनाएं।")
-            return steps
-
-        cluster_action = {
-            "tech": ("FULL STACK / DATA / ML इंटर्नशिप के लिए आवेदन करें। GitHub/Portfolio अपडेट करें।", "Google Summer of Code, Hackathons, और Freelancing प्रोजेक्ट्स शुरू करें।"),
-            "science": ("रिसर्च इंटर्नशिप (DRDO/ICMR/जीआईएस) या लैब असिस्टेंटशिप के लिए अप्लाई करें।", "रेसर्च पेपर पब्लिश करने और कॉन्फ्रेंस में प्रेजेंट करने की कोशिश करें।"),
-            "engineering": ("इंटर्नशिप (स्टैग) और प्रैक्टिकल प्रोजेक्ट्स बढ़ाएं। Core/IT कंपनियों में अप्लाई करें।", "AutoCAD, CATIA, सोलर/रिन्यूएबल प्रोजेक्ट्स जोड़ें।"),
-            "healthcare": ("हॉस्पिटल इंटर्नशिप, रिसर्च असिस्टेंट या फ्रीलेंसिंग के लिए आवेदन करें।", "रजिस्ट्रेशन/लाइसेंसिंग एग्जाम (जैसे RCI, Pharmacy Council) की जांच करें।"),
-            "business": ("स्टार्टअप इंटर्नशिप, कैंपस प्लेसमेंट प्रिप, या CA/CS की रजिस्ट्रेशन करें।", "बिजनेस प्लान प्रतियोगिताओं और शेयर मार्केट प्रैक्टिस शुरू करें।"),
-            "law": ("लॉ फर्म/जज मंथली/CLAT PG/जूडिशियरी रिसर्च इंटर्नशिप के लिए अप्लाई करें।", "मॉक ट्रायल, मोट मोट केस स्टडी और लेगल राइटिंग प्रैक्टिस बढ़ाएं।"),
-            "social": ("शिक्षा/Social Work NGO इंटर्नशिप, रिसर्च प्रोजेक्ट्स या B.Ed प्रिप करें।", "पर्यावरण/महिला/बाल कल्याण के प्लेटफॉर्म से जुड़ें।"),
-            "creative": ("डिजाइन स्टूडियो/एजेंसी इंटर्नशिप, फ्रीलेंसिंग गिग्स और पोर्टफोलियो अपडेट करें।", "Adobe Suite/Canva/वीडियो एडिटिंग प्रॉफिशिएंसी बढ़ाएं।"),
-        }
-        for c in interests:
-            if c in cluster_action:
-                prep, next_step = cluster_action[c]
-                steps["actions"].append(prep)
-                steps["actions"].append(next_step)
-            else:
-                steps["actions"].append(f"{c} फील्ड में इंटर्नशिप और प्रैक्टिकल प्रोजेक्ट्स शुरू करें।")
-
-        steps["career_tips"] = [
-            "यूनिटेक्स्ट का समय स्किल्स बिल्ड करने का सबसे अच्छा मौका है।",
-            "नट वर्किंग प्रोजेक्ट्स बनाएं — ये प्लेसमेंट में ज्यादा मदद करेंगे।",
-            "सर्टिफिकेशन कोर्स (Coursera/Google/Meta) करके रेज्यूमे बढ़ाएं।"
-        ]
-        return steps
-
-    if edu == "Postgraduate":
-        steps["actions"].append("अपनी स्पेशलाइजेशन (Research/Industry/Management) के लिए रोडमैप तैयार करें।")
-        steps["actions"].append("सर्टिफिकेशन (जैसे PMP, CFA, GATE, NET) या फ्रेशनल कोर्स की तैयारी शुरू करें।")
-        steps["actions"].append("नेटवर्किंग बढ़ाएं — कॉन्फ्रेंस, लिंक्डइन, इंडस्ट्री मीटअप्स में शामिल हों।")
-        steps["career_tips"] = [
-            "पोस्टग्रेजुएट से पहले या साथ ही इंडस्ट्री एक्सपोजर ज़रूरी है।",
-            "रिसर्च/प्रैक्टिकल प्रोजेक्ट्स हाइलाइट करके प्लेसमेंट या फुर्ती पदों के लिए तैयार रहें।"
-        ]
-        return steps
-
-    if edu == "Diploma":
-        steps["actions"].append("अपनी डिप्लोमा स्पेशलाइजेशन के अनुकूल जॉब रोले की लिस्ट बनाएं।")
-        steps["actions"].append("प्रैक्टिकल ट्रेनिंग/इंटर्नशिप के लिए स्थानीय इंडस्ट्री/गवर्नमेंट योजनाओं की जांच करें।")
-        steps["actions"].append("अगर पढ़ाई जारी रखना है, तो लेटरल एंट्री से बैचलर डिग्री की जांच करें।")
-        steps["career_tips"] = [
-            "डिप्लोमा हाथ में है — स्किल्स की तरफ ज़्यादा फोकस करें।",
-            "जॉब ओपनिंग्स (गवर्नमेंट/प्राइवेट) में अप्लाई करने की आदत डालें।"
-        ]
-        return steps
-
-    steps["actions"].append("अपने करियर रोडमैप पर नज़र रखें और नए स्किल्स सीखते रहें।")
-    return steps
+# Matching helpers live in matching.py (shared with the assistant).
 
 
 # ----------------- ROUTES: CORE -----------------
@@ -462,29 +321,65 @@ def logout():
 
 # ----------------- ROUTES: ONBOARDING -----------------
 
+def _profile_from_form():
+    income_bracket = request.form.get("income_bracket") or None
+    return dict(
+        education_level=request.form.get("education_level"),
+        state=request.form.get("state"),
+        category=request.form.get("category"),
+        gender=request.form.get("gender"),
+        income_bracket=int(income_bracket) if income_bracket else None,
+        interests=request.form.getlist("interests"),
+        stream=request.form.get("stream") or None,
+        board=request.form.get("board") or None,
+        marks_band=request.form.get("marks_band") or None,
+        subjects=request.form.getlist("subjects"),
+        has_disability=request.form.get("has_disability") == "on",
+        is_first_generation=request.form.get("is_first_generation") == "on",
+        is_rural=request.form.get("is_rural") == "on",
+        is_minority=request.form.get("is_minority") == "on",
+    )
+
+
+def upsert_profile(db, user_id, values, riasec_codes=None, language_pref=None):
+    existing = db.execute("SELECT riasec_codes, language_pref FROM profiles WHERE user_id = ?", (user_id,)).fetchone()
+    if riasec_codes is None:
+        riasec_codes = existing["riasec_codes"] if existing else None
+    if language_pref is None:
+        language_pref = existing["language_pref"] if existing else current_lang()
+    db.execute(
+        """INSERT INTO profiles (user_id, education_level, state, category, gender,
+           income_bracket, interests, stream, board, marks_band, subjects,
+           has_disability, is_first_generation, is_rural, is_minority,
+           language_pref, riasec_codes)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+           ON CONFLICT(user_id) DO UPDATE SET
+             education_level=excluded.education_level, state=excluded.state,
+             category=excluded.category, gender=excluded.gender,
+             income_bracket=excluded.income_bracket, interests=excluded.interests,
+             stream=excluded.stream, board=excluded.board, marks_band=excluded.marks_band,
+             subjects=excluded.subjects, has_disability=excluded.has_disability,
+             is_first_generation=excluded.is_first_generation, is_rural=excluded.is_rural,
+             is_minority=excluded.is_minority, language_pref=excluded.language_pref,
+             riasec_codes=excluded.riasec_codes""",
+        (user_id, values["education_level"], values["state"], values["category"],
+         values["gender"], values["income_bracket"], json.dumps(values["interests"]),
+         values.get("stream"), values.get("board"), values.get("marks_band"),
+         json.dumps(values.get("subjects") or []),
+         values.get("has_disability") or False,
+         values.get("is_first_generation") or False,
+         values.get("is_rural") or False,
+         values.get("is_minority") or False,
+         language_pref, riasec_codes),
+    )
+
+
 @app.route("/onboarding", methods=["GET", "POST"])
 @login_required
 def onboarding():
     if request.method == "POST":
-        education_level = request.form.get("education_level")
-        state = request.form.get("state")
-        category = request.form.get("category")
-        gender = request.form.get("gender")
-        income_bracket = request.form.get("income_bracket") or None
-        interests = request.form.getlist("interests")
-
         db = get_db()
-        db.execute(
-            """INSERT INTO profiles (user_id, education_level, state, category, gender,
-               income_bracket, interests)
-               VALUES (?,?,?,?,?,?,?)
-               ON CONFLICT(user_id) DO UPDATE SET
-                 education_level=excluded.education_level, state=excluded.state,
-                 category=excluded.category, gender=excluded.gender,
-                 income_bracket=excluded.income_bracket, interests=excluded.interests""",
-            (session["user_id"], education_level, state, category, gender,
-             int(income_bracket) if income_bracket else None, json.dumps(interests)),
-        )
+        upsert_profile(db, session["user_id"], _profile_from_form())
         db.commit()
         flash("Profile saved! Here's what we recommend for you.", "success")
         return redirect(url_for("dashboard"))
@@ -493,20 +388,63 @@ def onboarding():
     return render_template(
         "onboarding.html", profile=profile, clusters=INTEREST_CLUSTERS,
         education_levels=EDUCATION_LEVELS, categories=CATEGORIES, states=INDIAN_STATES,
-        current_interests=json.loads(profile["interests"]) if profile and profile["interests"] else [],
+        streams=STREAMS, boards=BOARDS, marks_bands=MARKS_BANDS, subject_options=SUBJECT_OPTIONS,
+        current_interests=profile_interests(profile),
+        current_subjects=profile_subjects(profile),
     )
 
 
+@app.route("/language", methods=["POST"])
+def set_language():
+    lang = normalize_lang(request.form.get("lang") or request.args.get("lang") or "en")
+    session["lang"] = lang
+    if session.get("user_id"):
+        db = get_db()
+        db.execute(
+            "UPDATE profiles SET language_pref = ? WHERE user_id = ?",
+            (lang, session["user_id"]),
+        )
+        db.commit()
+    next_url = request.form.get("next") or request.referrer or url_for("index")
+    return redirect(next_url)
+
+
 # ----------------- ROUTES: CAREERS -----------------
+
+def _career_sort_sql(sort):
+    if sort == "salary":
+        return "salary_max DESC NULLS LAST, name"
+    if sort == "demand":
+        return """CASE demand
+            WHEN 'Very High' THEN 1 WHEN 'High' THEN 2 WHEN 'Medium' THEN 3
+            ELSE 4 END, name"""
+    return "is_verified DESC, name"
+
 
 @app.route("/careers")
 def careers_list():
     db = get_db()
     cluster_filter = request.args.get("cluster", "")
+    q = (request.args.get("q") or "").strip()
+    sort = request.args.get("sort", "name")
+    show_all = request.args.get("all") == "1"
+
+    clauses, params = [], []
+    if not show_all and not q:
+        clauses.append("is_verified = TRUE")
     if cluster_filter:
-        rows = db.execute("SELECT * FROM career_app_view WHERE cluster = ? ORDER BY name", (cluster_filter,)).fetchall()
-    else:
-        rows = db.execute("SELECT * FROM career_app_view ORDER BY name").fetchall()
+        clauses.append("cluster = ?")
+        params.append(cluster_filter)
+    if q:
+        clauses.append("(name ILIKE ? OR description ILIKE ? OR COALESCE(skills,'') ILIKE ? OR COALESCE(exams,'') ILIKE ?)")
+        like = f"%{q}%"
+        params.extend([like, like, like, like])
+
+    sql = "SELECT * FROM career_app_view"
+    if clauses:
+        sql += " WHERE " + " AND ".join(clauses)
+    sql += " ORDER BY " + _career_sort_sql(sort)
+    rows = db.execute(sql, params).fetchall()
 
     saved_ids = set()
     profile = current_profile()
@@ -515,10 +453,25 @@ def careers_list():
         saved_rows = db.execute("SELECT career_id FROM saved_careers WHERE user_id = ?", (session["user_id"],)).fetchall()
         saved_ids = {r["career_id"] for r in saved_rows}
 
+    unverified_count = db.execute("SELECT COUNT(*) AS n FROM career_app_view WHERE is_verified = FALSE").fetchone()["n"]
+
     return render_template(
         "careers_list.html", careers=rows, clusters=INTEREST_CLUSTERS,
         active_cluster=cluster_filter, saved_ids=saved_ids, recommended_ids=recommended_ids,
+        q=q, sort=sort, show_all=show_all, unverified_count=unverified_count,
     )
+
+
+@app.route("/careers/compare")
+def careers_compare():
+    slugs = [s.strip() for s in (request.args.get("slugs") or "").split(",") if s.strip()][:3]
+    db = get_db()
+    careers = []
+    for slug in slugs:
+        row = db.execute("SELECT * FROM career_app_view WHERE slug = ?", (slug,)).fetchone()
+        if row:
+            careers.append(row)
+    return render_template("career_compare.html", careers=careers)
 
 
 @app.route("/careers/<slug>")
@@ -530,6 +483,7 @@ def career_detail(slug):
         return redirect(url_for("careers_list"))
 
     is_saved = False
+    profile = current_profile()
     if session.get("user_id"):
         row = db.execute(
             "SELECT 1 FROM saved_careers WHERE user_id = ? AND career_id = ?",
@@ -537,7 +491,73 @@ def career_detail(slug):
         ).fetchone()
         is_saved = row is not None
 
-    return render_template("career_detail.html", career=career, is_saved=is_saved, profile=current_profile())
+    institutes = db.execute(
+        "SELECT * FROM career_institutes WHERE career_id = ? ORDER BY id", (career["career_id"],)
+    ).fetchall()
+    roadmap = db.execute(
+        "SELECT * FROM career_roadmap_steps WHERE career_id = ? ORDER BY sequence_order, id",
+        (career["career_id"],),
+    ).fetchall()
+    related = db.execute(
+        """SELECT v.* FROM career_app_view v
+           JOIN related_careers rc ON rc.related_career_id = v.career_id
+           WHERE rc.career_id = ? ORDER BY v.is_verified DESC, v.name""",
+        (career["career_id"],),
+    ).fetchall()
+    if not related:
+        related = db.execute(
+            """SELECT * FROM career_app_view
+               WHERE cluster = ? AND career_id <> ? AND is_verified = TRUE
+               ORDER BY name LIMIT 4""",
+            (career["cluster"], career["career_id"]),
+        ).fetchall()
+
+    exam_names = parse_list(career.get("exams"))
+    related_exams = []
+    if exam_names:
+        clauses = " OR ".join(["exam_name ILIKE ?"] * len(exam_names))
+        related_exams = db.execute(
+            f"SELECT * FROM exam_calendar WHERE {clauses} ORDER BY typical_month",
+            [f"%{n}%" for n in exam_names],
+        ).fetchall()
+
+    related_scholarships = []
+    if profile:
+        all_sch = db.execute("SELECT * FROM scholarships ORDER BY deadline").fetchall()
+        related_scholarships = [s for s in all_sch if scholarship_matches_profile(s, profile)][:4]
+    else:
+        related_scholarships = db.execute("SELECT * FROM scholarships ORDER BY deadline LIMIT 3").fetchall()
+
+    related_jobs = []
+    tokens = exam_names[:3]
+    if tokens:
+        job_clauses = " OR ".join(
+            ["(COALESCE(exam_name,'') ILIKE ? OR job_title ILIKE ? OR COALESCE(commission,'') ILIKE ?)"]
+            * len(tokens)
+        )
+        params = []
+        for t in tokens:
+            like = f"%{t}%"
+            params.extend([like, like, like])
+        try:
+            related_jobs = db.execute(
+                f"SELECT * FROM gov_job_notifications WHERE {job_clauses} ORDER BY created_at DESC LIMIT 4",
+                params,
+            ).fetchall()
+        except Exception:
+            db.rollback()
+            related_jobs = []
+
+    match_reasons = []
+    if profile:
+        _, match_reasons = score_career(career, profile)
+
+    return render_template(
+        "career_detail.html", career=career, is_saved=is_saved, profile=profile,
+        institutes=institutes, roadmap=roadmap, related=related,
+        related_exams=related_exams, related_scholarships=related_scholarships,
+        related_jobs=related_jobs, match_reasons=match_reasons,
+    )
 
 
 @app.route("/careers/<career_id>/toggle-save", methods=["POST"])
@@ -556,6 +576,7 @@ def toggle_save_career(career_id):
             "INSERT INTO saved_careers (user_id, career_id, created_at) VALUES (?,?,?)",
             (session["user_id"], career_id, now_iso()),
         )
+        _ensure_career_checklist(db, session["user_id"], career_id)
         flash("Added to your roadmap.", "success")
     db.commit()
     return redirect(request.referrer or url_for("careers_list"))
@@ -568,17 +589,30 @@ def scholarships_list():
     db = get_db()
     type_filter = request.args.get("type", "")
     show_matches_only = request.args.get("matches") == "1"
+    q = (request.args.get("q") or "").strip()
 
+    clauses, params = [], []
     if type_filter:
-        rows = db.execute("SELECT * FROM scholarships WHERE type = ? ORDER BY deadline", (type_filter,)).fetchall()
-    else:
-        rows = db.execute("SELECT * FROM scholarships ORDER BY deadline").fetchall()
+        clauses.append("type = ?")
+        params.append(type_filter)
+    if q:
+        clauses.append("(name ILIKE ? OR provider ILIKE ? OR COALESCE(description,'') ILIKE ?)")
+        like = f"%{q}%"
+        params.extend([like, like, like])
+    sql = "SELECT * FROM scholarships"
+    if clauses:
+        sql += " WHERE " + " AND ".join(clauses)
+    sql += " ORDER BY deadline"
+    rows = db.execute(sql, params).fetchall()
 
     profile = current_profile()
     matched_ids = set()
+    explanations = {}
     if profile:
         for r in rows:
-            if scholarship_matches_profile(r, profile):
+            expl = scholarship_match_explanation(r, profile)
+            explanations[r["id"]] = expl
+            if expl["matched"]:
                 matched_ids.add(r["id"])
         if show_matches_only:
             rows = [r for r in rows if r["id"] in matched_ids]
@@ -593,7 +627,7 @@ def scholarships_list():
     return render_template(
         "scholarships_list.html", scholarships=rows, types=types, active_type=type_filter,
         matched_ids=matched_ids, saved_ids=saved_ids, has_profile=profile is not None,
-        show_matches_only=show_matches_only,
+        show_matches_only=show_matches_only, q=q, explanations=explanations,
     )
 
 
@@ -606,17 +640,23 @@ def scholarship_detail(scholarship_id):
         return redirect(url_for("scholarships_list"))
 
     profile = current_profile()
-    is_match = scholarship_matches_profile(sch, profile) if profile else None
+    explanation = scholarship_match_explanation(sch, profile) if profile else None
+    is_match = explanation["matched"] if explanation else None
 
     is_saved = False
+    saved_status = None
     if session.get("user_id"):
         row = db.execute(
-            "SELECT 1 FROM saved_scholarships WHERE user_id = ? AND scholarship_id = ?",
+            "SELECT status FROM saved_scholarships WHERE user_id = ? AND scholarship_id = ?",
             (session["user_id"], scholarship_id),
         ).fetchone()
         is_saved = row is not None
+        saved_status = row["status"] if row else None
 
-    return render_template("scholarship_detail.html", sch=sch, is_match=is_match, is_saved=is_saved)
+    return render_template(
+        "scholarship_detail.html", sch=sch, is_match=is_match, is_saved=is_saved,
+        explanation=explanation, saved_status=saved_status, statuses=SCHOLARSHIP_STATUSES,
+    )
 
 
 @app.route("/scholarships/<int:scholarship_id>/toggle-save", methods=["POST"])
@@ -635,6 +675,9 @@ def toggle_save_scholarship(scholarship_id):
             "INSERT INTO saved_scholarships (user_id, scholarship_id, created_at) VALUES (?,?,?)",
             (session["user_id"], scholarship_id, now_iso()),
         )
+        sch = db.execute("SELECT * FROM scholarships WHERE id = ?", (scholarship_id,)).fetchone()
+        if sch:
+            _ensure_scholarship_checklist(db, session["user_id"], sch)
         flash("Added to your roadmap.", "success")
     db.commit()
     return redirect(request.referrer or url_for("scholarships_list"))
@@ -647,8 +690,71 @@ def toggle_save_scholarship(scholarship_id):
 @app.route("/gov-jobs")
 def gov_jobs_list():
     db = get_db()
-    rows = db.execute("SELECT * FROM gov_job_notifications ORDER BY created_at DESC").fetchall()
-    return render_template("gov_jobs_list.html", jobs=rows)
+    q = (request.args.get("q") or "").strip()
+    commission = (request.args.get("commission") or "").strip()
+    state = (request.args.get("state") or "").strip()
+    status = request.args.get("status") or "all"
+
+    clauses, params = [], []
+    if q:
+        clauses.append(
+            "(job_title ILIKE ? OR COALESCE(department,'') ILIKE ? OR COALESCE(exam_name,'') ILIKE ? "
+            "OR COALESCE(commission,'') ILIKE ? OR COALESCE(qualification,'') ILIKE ?)"
+        )
+        like = f"%{q}%"
+        params.extend([like, like, like, like, like])
+    if commission:
+        clauses.append("COALESCE(commission,'') ILIKE ?")
+        params.append(f"%{commission}%")
+    if state:
+        clauses.append("(COALESCE(state,'') ILIKE ? OR COALESCE(department,'') ILIKE ?)")
+        params.extend([f"%{state}%", f"%{state}%"])
+
+    sql = "SELECT * FROM gov_job_notifications"
+    if clauses:
+        sql += " WHERE " + " AND ".join(clauses)
+    sql += " ORDER BY created_at DESC"
+    try:
+        rows = db.execute(sql, params).fetchall()
+    except Exception:
+        db.rollback()
+        rows = db.execute("SELECT * FROM gov_job_notifications ORDER BY created_at DESC").fetchall()
+
+    today = datetime.date.today()
+    annotated = []
+    for r in rows:
+        open_flag = gov_job_is_open(r, today)
+        if status == "open" and open_flag is False:
+            continue
+        if status == "closed" and open_flag is not False:
+            continue
+        item = dict(r)
+        item["is_open"] = open_flag
+        item["is_national"] = is_national_job(r)
+        annotated.append(item)
+
+    saved_ids = set()
+    if session.get("user_id"):
+        saved_rows = db.execute(
+            "SELECT notification_id FROM saved_gov_jobs WHERE user_id = ?", (session["user_id"],)
+        ).fetchall()
+        saved_ids = {r["notification_id"] for r in saved_rows}
+
+    commissions = []
+    try:
+        commissions = [
+            r["commission"] for r in db.execute(
+                "SELECT DISTINCT commission FROM gov_job_notifications "
+                "WHERE commission IS NOT NULL AND commission <> '' ORDER BY commission"
+            ).fetchall()
+        ]
+    except Exception:
+        db.rollback()
+
+    return render_template(
+        "gov_jobs_list.html", jobs=annotated, q=q, commission=commission, state=state,
+        status=status, saved_ids=saved_ids, commissions=commissions,
+    )
 
 
 @app.route("/gov-jobs/<int:job_id>")
@@ -659,23 +765,110 @@ def gov_job_detail(job_id):
         flash("Job notification not found.", "error")
         return redirect(url_for("gov_jobs_list"))
     posts = db.execute("SELECT * FROM gov_job_posts WHERE notification_id = ? ORDER BY id", (job_id,)).fetchall()
-    return render_template("gov_job_detail.html", job=job, posts=posts)
+    profile = current_profile()
+    eligibility = gov_job_eligibility(job, profile)
+    is_saved = False
+    if session.get("user_id"):
+        is_saved = db.execute(
+            "SELECT 1 FROM saved_gov_jobs WHERE user_id = ? AND notification_id = ?",
+            (session["user_id"], job_id),
+        ).fetchone() is not None
+    hi_tr = None
+    translations = job.get("translations")
+    if current_lang() == "hi" and isinstance(translations, dict):
+        hi_tr = translations.get("hi") or translations.get("HI")
+    return render_template(
+        "gov_job_detail.html", job=job, posts=posts, is_saved=is_saved,
+        eligibility=eligibility, is_open=gov_job_is_open(job), hi_tr=hi_tr,
+        is_national=is_national_job(job),
+    )
+
+
+@app.route("/gov-jobs/<int:job_id>/toggle-save", methods=["POST"])
+@login_required
+def toggle_save_gov_job(job_id):
+    db = get_db()
+    row = db.execute(
+        "SELECT 1 FROM saved_gov_jobs WHERE user_id = ? AND notification_id = ?",
+        (session["user_id"], job_id),
+    ).fetchone()
+    if row:
+        db.execute(
+            "DELETE FROM saved_gov_jobs WHERE user_id = ? AND notification_id = ?",
+            (session["user_id"], job_id),
+        )
+        flash("Removed from your roadmap.", "success")
+    else:
+        db.execute(
+            "INSERT INTO saved_gov_jobs (user_id, notification_id) VALUES (?,?) ON CONFLICT DO NOTHING",
+            (session["user_id"], job_id),
+        )
+        flash("Added to your roadmap.", "success")
+    db.commit()
+    return redirect(request.referrer or url_for("gov_jobs_list"))
+
+
+def _resolve_gov_job_pdf(raw):
+    """Accept absolute paths or MCP-relative stored_pdfs/<name>."""
+    if not raw:
+        return None
+    if os.path.isfile(raw):
+        return raw
+    name = os.path.basename(raw)
+    here = os.path.dirname(os.path.abspath(__file__))
+    roots = [
+        os.environ.get("GOV_JOB_PDF_DIR") or "",
+        os.path.join(here, "..", "pathwise-mcp", "stored_pdfs"),
+        os.path.join(here, "stored_pdfs"),
+    ]
+    for root in roots:
+        if not root:
+            continue
+        cand = os.path.abspath(os.path.join(root, name))
+        if os.path.isfile(cand):
+            return cand
+    return None
 
 
 @app.route("/gov-jobs/<int:job_id>/pdf")
 def gov_job_pdf(job_id):
     db = get_db()
     job = db.execute("SELECT local_pdf_path FROM gov_job_notifications WHERE id = ?", (job_id,)).fetchone()
-    if not job or not job["local_pdf_path"] or not os.path.exists(job["local_pdf_path"]):
+    path = _resolve_gov_job_pdf(job["local_pdf_path"] if job else None)
+    if not path:
         flash("PDF not available for this notification.", "error")
         return redirect(url_for("gov_jobs_list"))
-    return send_file(job["local_pdf_path"])
+    return send_file(path)
 
 
 # ----------------- ROUTES: ADMIN -----------------
 
 CAREER_FIELDS = ["slug", "name", "cluster", "description", "demand", "salary_min",
                   "salary_max", "skills", "ai_impact", "education_path", "exams"]
+
+
+def _ensure_scholarship_checklist(db, user_id, sch):
+    for doc in parse_list(sch.get("documents")):
+        db.execute(
+            """INSERT INTO checklist_items (user_id, item_type, ref_id, label)
+               VALUES (?,?,?,?) ON CONFLICT (user_id, item_type, ref_id, label) DO NOTHING""",
+            (user_id, "scholarship_doc", str(sch["id"]), doc),
+        )
+
+
+def _ensure_career_checklist(db, user_id, career_id):
+    steps = db.execute(
+        "SELECT description FROM career_roadmap_steps WHERE career_id = ? ORDER BY sequence_order",
+        (career_id,),
+    ).fetchall()
+    for step in steps:
+        if not step["description"]:
+            continue
+        db.execute(
+            """INSERT INTO checklist_items (user_id, item_type, ref_id, label)
+               VALUES (?,?,?,?) ON CONFLICT (user_id, item_type, ref_id, label) DO NOTHING""",
+            (user_id, "career_step", str(career_id), step["description"]),
+        )
 SCHOLARSHIP_FIELDS = ["name", "provider", "type", "description", "education_level", "states",
                        "categories", "gender", "income_ceiling", "amount", "deadline",
                        "apply_url", "documents"]
@@ -710,6 +903,7 @@ def admin_career_new():
         values = {f: request.form.get(f, "").strip() for f in CAREER_FIELDS}
         values["salary_min"] = int(values["salary_min"]) if values["salary_min"] else None
         values["salary_max"] = int(values["salary_max"]) if values["salary_max"] else None
+        values["is_verified"] = request.form.get("is_verified") == "on"
         save_career_admin(db, None, values)
         db.commit()
         flash("Career added.", "success")
@@ -730,6 +924,7 @@ def admin_career_edit(career_id):
         values = {f: request.form.get(f, "").strip() for f in CAREER_FIELDS}
         values["salary_min"] = int(values["salary_min"]) if values["salary_min"] else None
         values["salary_max"] = int(values["salary_max"]) if values["salary_max"] else None
+        values["is_verified"] = request.form.get("is_verified") == "on"
         save_career_admin(db, career_id, values)
         db.commit()
         flash("Career updated.", "success")
@@ -958,59 +1153,236 @@ def admin_gov_job_pending_delete(filename):
 
 # ----------------- ROUTES: DASHBOARD -----------------
 
-@app.route("/dashboard")
-@login_required
-def dashboard():
-    db = get_db()
-    profile = current_profile()
-
+def _dashboard_payload(db, user_id, profile):
     saved_careers = db.execute(
         """SELECT v.* FROM career_app_view v
            JOIN saved_careers sc ON v.career_id = sc.career_id
            WHERE sc.user_id = ? ORDER BY v.name""",
-        (session["user_id"],),
+        (user_id,),
     ).fetchall()
 
     saved_scholarships = db.execute(
-        """SELECT scholarships.* FROM scholarships
+        """SELECT scholarships.*, saved_scholarships.status AS save_status
+           FROM scholarships
            JOIN saved_scholarships ON scholarships.id = saved_scholarships.scholarship_id
            WHERE saved_scholarships.user_id = ? ORDER BY scholarships.deadline""",
-        (session["user_id"],),
+        (user_id,),
     ).fetchall()
 
-    recommended_careers = []
+    saved_jobs = db.execute(
+        """SELECT n.* FROM gov_job_notifications n
+           JOIN saved_gov_jobs sg ON sg.notification_id = n.id
+           WHERE sg.user_id = ? ORDER BY n.apply_end_date""",
+        (user_id,),
+    ).fetchall()
+
+    recommended_careers = recommended_career_rows(profile, db, limit=6) if profile else []
     matched_scholarships = []
     next_steps = None
     if profile:
-        rec_ids = recommended_career_ids(profile, db)
-        if rec_ids:
-            placeholders = ",".join("?" for _ in rec_ids)
-            recommended_careers = db.execute(
-                f"SELECT * FROM career_app_view WHERE career_id IN ({placeholders}) ORDER BY name", rec_ids
-            ).fetchall()
-
         all_scholarships = db.execute("SELECT * FROM scholarships ORDER BY deadline").fetchall()
         matched_scholarships = [s for s in all_scholarships if scholarship_matches_profile(s, profile)][:6]
+        next_steps = next_steps_for_profile(profile, current_lang())
 
-        next_steps = next_steps_for_profile(profile, db)
+    checklist = db.execute(
+        "SELECT * FROM checklist_items WHERE user_id = ? ORDER BY done, id",
+        (user_id,),
+    ).fetchall()
 
-    today = datetime.date.today().isoformat()
+    today = datetime.date.today()
+    deadlines = []
+    for s in saved_scholarships:
+        d = parse_flexible_date(s.get("deadline"))
+        if d:
+            deadlines.append({"kind": "scholarship", "name": s["name"], "date": d,
+                              "href": url_for("scholarship_detail", scholarship_id=s["id"]),
+                              "closed": d < today})
+    for j in saved_jobs:
+        d = parse_flexible_date(j.get("apply_end_date"))
+        if d:
+            deadlines.append({"kind": "gov_job", "name": j.get("exam_name") or j["job_title"],
+                              "date": d, "href": url_for("gov_job_detail", job_id=j["id"]),
+                              "closed": d < today})
+    if profile:
+        for s in matched_scholarships:
+            d = parse_flexible_date(s.get("deadline"))
+            if d and d >= today:
+                deadlines.append({"kind": "scholarship", "name": s["name"], "date": d,
+                                  "href": url_for("scholarship_detail", scholarship_id=s["id"]),
+                                  "closed": False})
+    # unique by name+date
+    seen = set()
+    unique = []
+    for item in sorted(deadlines, key=lambda x: x["date"]):
+        key = (item["name"], item["date"])
+        if key in seen:
+            continue
+        seen.add(key)
+        unique.append(item)
+    deadlines = unique[:8]
 
-    return render_template(
-        "dashboard.html", profile=profile, saved_careers=saved_careers,
-        saved_scholarships=saved_scholarships, recommended_careers=recommended_careers,
-        matched_scholarships=matched_scholarships, today=today,
-        next_steps=next_steps,
+    share = db.execute("SELECT token FROM share_links WHERE user_id = ?", (user_id,)).fetchone()
+
+    return dict(
+        profile=profile, saved_careers=saved_careers, saved_scholarships=saved_scholarships,
+        saved_jobs=saved_jobs, recommended_careers=recommended_careers,
+        matched_scholarships=matched_scholarships, today=today.isoformat(),
+        next_steps=next_steps, checklist=checklist, deadlines=deadlines,
+        share_token=share["token"] if share else None, statuses=SCHOLARSHIP_STATUSES,
     )
+
+
+@app.route("/dashboard")
+@login_required
+def dashboard():
+    db = get_db()
+    payload = _dashboard_payload(db, session["user_id"], current_profile())
+    return render_template("dashboard.html", readonly=False, share_user=current_user(), **payload)
+
+
+# ----------------- ROUTES: EXAMS, QUIZ, SHARE, CHECKLIST -----------------
+
+@app.route("/exams")
+def exams_calendar():
+    db = get_db()
+    stream = request.args.get("stream", "")
+    edu = request.args.get("education", "")
+    rows = db.execute("SELECT * FROM exam_calendar ORDER BY typical_month NULLS LAST, exam_name").fetchall()
+    if stream:
+        rows = [r for r in rows if not r["streams"] or stream in parse_list(r["streams"]) or "all" in parse_list(r["streams"])]
+    if edu:
+        rows = [r for r in rows if not r["education_level"] or edu in (r["education_level"] or "")]
+    profile = current_profile()
+    return render_template(
+        "exams.html", exams=rows, stream=stream, education=edu,
+        streams=STREAMS, education_levels=EDUCATION_LEVELS, profile=profile,
+    )
+
+
+@app.route("/quiz", methods=["GET", "POST"])
+@login_required
+def interest_quiz():
+    profile = current_profile()
+    if request.method == "POST":
+        answers = {qid: request.form.get(qid) for qid, _l, _en, _hi in RIASEC_QUESTIONS}
+        top, tallies = score_riasec(answers)
+        db = get_db()
+        if profile:
+            db.execute(
+                "UPDATE profiles SET riasec_codes = ? WHERE user_id = ?",
+                (json.dumps(top), session["user_id"]),
+            )
+        else:
+            upsert_profile(db, session["user_id"], {
+                "education_level": None, "state": None, "category": None, "gender": None,
+                "income_bracket": None, "interests": [], "subjects": [],
+            }, riasec_codes=json.dumps(top))
+        db.commit()
+        flash("Quiz saved. Careers will now rank with your interest type.", "success")
+        return redirect(url_for("dashboard"))
+    return render_template(
+        "quiz.html", questions=RIASEC_QUESTIONS, profile=profile,
+        current_codes=profile_riasec(profile),
+    )
+
+
+@app.route("/dashboard/share", methods=["POST"])
+@login_required
+def dashboard_share():
+    db = get_db()
+    existing = db.execute("SELECT token FROM share_links WHERE user_id = ?", (session["user_id"],)).fetchone()
+    if existing:
+        token = existing["token"]
+    else:
+        token = secrets.token_urlsafe(16)
+        db.execute("INSERT INTO share_links (token, user_id) VALUES (?,?)", (token, session["user_id"]))
+        db.commit()
+    flash("Share link created. Anyone with the link can view (not edit) your roadmap.", "success")
+    return redirect(url_for("dashboard"))
+
+
+@app.route("/share/<token>")
+def shared_roadmap(token):
+    db = get_db()
+    link = db.execute("SELECT * FROM share_links WHERE token = ?", (token,)).fetchone()
+    if not link:
+        flash("This share link is invalid or has been removed.", "error")
+        return redirect(url_for("index"))
+    user = db.execute("SELECT * FROM users WHERE id = ?", (link["user_id"],)).fetchone()
+    profile = db.execute("SELECT * FROM profiles WHERE user_id = ?", (link["user_id"],)).fetchone()
+    payload = _dashboard_payload(db, link["user_id"], profile)
+    return render_template("dashboard.html", readonly=True, share_user=user, **payload)
+
+
+@app.route("/checklist/<int:item_id>/toggle", methods=["POST"])
+@login_required
+def toggle_checklist(item_id):
+    db = get_db()
+    row = db.execute(
+        "SELECT * FROM checklist_items WHERE id = ? AND user_id = ?",
+        (item_id, session["user_id"]),
+    ).fetchone()
+    if row:
+        db.execute("UPDATE checklist_items SET done = ? WHERE id = ?", (not row["done"], item_id))
+        db.commit()
+    return redirect(request.referrer or url_for("dashboard"))
+
+
+@app.route("/scholarships/<int:scholarship_id>/status", methods=["POST"])
+@login_required
+def set_scholarship_status(scholarship_id):
+    status = request.form.get("status") or "saved"
+    allowed = {s[0] for s in SCHOLARSHIP_STATUSES}
+    if status not in allowed:
+        status = "saved"
+    db = get_db()
+    db.execute(
+        "UPDATE saved_scholarships SET status = ? WHERE user_id = ? AND scholarship_id = ?",
+        (status, session["user_id"], scholarship_id),
+    )
+    db.commit()
+    return redirect(request.referrer or url_for("dashboard"))
 
 
 # ----------------- ROUTES: ASSISTANT -----------------
 
+def _load_assistant_history(db, user_id):
+    rows = db.execute(
+        """SELECT role, content FROM assistant_messages
+           WHERE user_id = ? AND role IN ('user', 'assistant')
+           ORDER BY id DESC LIMIT 12""",
+        (user_id,),
+    ).fetchall()
+    return [{"role": r["role"], "content": r["content"]} for r in reversed(rows)]
+
+
+def _save_assistant_turn(db, user_id, user_message, reply):
+    db.execute(
+        "INSERT INTO assistant_messages (user_id, role, content) VALUES (?,?,?)",
+        (user_id, "user", user_message),
+    )
+    db.execute(
+        "INSERT INTO assistant_messages (user_id, role, content) VALUES (?,?,?)",
+        (user_id, "assistant", reply or ""),
+    )
+    # keep last ~40 rows so the table does not grow forever
+    db.execute(
+        """DELETE FROM assistant_messages WHERE user_id = ? AND id < (
+               SELECT MIN(id) FROM (
+                   SELECT id FROM assistant_messages WHERE user_id = ? ORDER BY id DESC LIMIT 40
+               ) t
+           )""",
+        (user_id, user_id),
+    )
+
+
 @app.route("/assistant")
 @login_required
 def assistant_page():
+    db = get_db()
+    history = _load_assistant_history(db, session["user_id"])
     return render_template(
-        "assistant.html", history=session.get("assistant_history", []), profile=current_profile(),
+        "assistant.html", history=history, profile=current_profile(),
     )
 
 
@@ -1023,7 +1395,7 @@ def assistant_message():
         return jsonify({"error": "Message is required."}), 400
 
     db = get_db()
-    history = session.get("assistant_history", [])
+    history = _load_assistant_history(db, session["user_id"])
     try:
         import assistant
         new_history, reply, cards = assistant.run_agent_turn(
@@ -1046,13 +1418,17 @@ def assistant_message():
         app.logger.exception("Assistant error")
         return jsonify({"error": "The assistant hit an error. Please try again."}), 502
 
-    session["assistant_history"] = new_history
+    _save_assistant_turn(db, session["user_id"], user_message, reply)
+    db.commit()
     return jsonify({"reply": reply, "cards": cards})
 
 
 @app.route("/assistant/reset", methods=["POST"])
 @login_required
 def assistant_reset():
+    db = get_db()
+    db.execute("DELETE FROM assistant_messages WHERE user_id = ?", (session["user_id"],))
+    db.commit()
     session.pop("assistant_history", None)
     return redirect(url_for("assistant_page"))
 

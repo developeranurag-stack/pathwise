@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block title %}{{ t('exams.title') }} — PathWise India{% endblock %}
+{% block content %}
+<div class="max-w-4xl mx-auto px-4 sm:px-6 py-8 sm:py-10">
+  <h1 class="text-3xl font-extrabold mb-2">{{ t('exams.title') }}</h1>
+  <p class="text-slate-600 mb-6">{{ t('exams.subtitle') }}</p>
+
+  <form method="GET" class="flex flex-col sm:flex-row gap-2 mb-6">
+    <select name="stream" class="rounded-xl border border-slate-300 px-3 py-2.5 text-sm">
+      <option value="">All streams</option>
+      {% for key, label in streams %}
+      <option value="{{ key }}" {% if stream == key %}selected{% endif %}>{{ label }}</option>
+      {% endfor %}
+    </select>
+    <select name="education" class="rounded-xl border border-slate-300 px-3 py-2.5 text-sm">
+      <option value="">All levels</option>
+      {% for level in education_levels %}
+      <option value="{{ level }}" {% if education == level %}selected{% endif %}>{{ level }}</option>
+      {% endfor %}
+    </select>
+    <button class="tap px-4 py-2.5 rounded-xl bg-brand-600 text-white text-sm font-semibold">Filter</button>
+  </form>
+
+  <div class="space-y-3">
+    {% for ex in exams %}
+    <article class="bg-white border border-slate-200 rounded-2xl p-5">
+      <div class="flex flex-wrap justify-between gap-2">
+        <h2 class="font-bold text-lg">{{ ex.exam_name }}</h2>
+        <span class="badge bg-red-50 text-red-700">{{ ex.typical_window }} · {{ ex.next_cycle }}</span>
+      </div>
+      <p class="text-sm text-slate-600 mt-2">{{ ex.notes }}</p>
+      <div class="flex flex-wrap gap-2 mt-3 text-xs">
+        {% if ex.education_level %}<span class="badge bg-slate-100 text-slate-700">{{ ex.education_level }}</span>{% endif %}
+        {% if ex.streams %}<span class="badge bg-slate-100 text-slate-700">{{ ex.streams }}</span>{% endif %}
+      </div>
+      {% if ex.official_url %}
+      <a href="{{ ex.official_url }}" target="_blank" rel="noopener" class="text-sm text-brand-700 font-semibold hover:underline mt-2 inline-block">Official site →</a>
+      {% endif %}
+    </article>
+    {% endfor %}
+  </div>
+</div>
+{% endblock %}

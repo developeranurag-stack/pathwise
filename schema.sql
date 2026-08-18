@@ -90,6 +90,7 @@ CREATE TABLE IF NOT EXISTS careers (
     source                       TEXT NOT NULL DEFAULT 'manual',
     source_url                   TEXT,
     last_synced_at                TIMESTAMPTZ,
+    is_verified                  BOOLEAN NOT NULL DEFAULT FALSE,
     created_at                  TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at                  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -402,7 +403,17 @@ CREATE TABLE IF NOT EXISTS profiles (
     category            TEXT,
     gender              TEXT,
     income_bracket      INTEGER,
-    interests           TEXT
+    interests           TEXT,
+    stream              TEXT,
+    board               TEXT,
+    marks_band          TEXT,
+    subjects            TEXT,
+    has_disability      BOOLEAN NOT NULL DEFAULT FALSE,
+    is_first_generation BOOLEAN NOT NULL DEFAULT FALSE,
+    is_rural            BOOLEAN NOT NULL DEFAULT FALSE,
+    is_minority         BOOLEAN NOT NULL DEFAULT FALSE,
+    language_pref       TEXT NOT NULL DEFAULT 'en',
+    riasec_codes        TEXT
 );
 
 CREATE TABLE IF NOT EXISTS scholarships (
@@ -422,7 +433,9 @@ CREATE TABLE IF NOT EXISTS scholarships (
     documents       TEXT,
     source          TEXT NOT NULL DEFAULT 'manual',
     source_url      TEXT,
-    last_synced_at  TEXT
+    last_synced_at  TEXT,
+    requires_disability BOOLEAN NOT NULL DEFAULT FALSE,
+    requires_minority   BOOLEAN NOT NULL DEFAULT FALSE
 );
 
 CREATE TABLE IF NOT EXISTS sources (
@@ -452,6 +465,71 @@ CREATE TABLE IF NOT EXISTS saved_scholarships (
     created_at      TEXT NOT NULL,
     PRIMARY KEY (user_id, scholarship_id)
 );
+
+CREATE TABLE IF NOT EXISTS checklist_items (
+    id          SERIAL PRIMARY KEY,
+    user_id     INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    item_type   TEXT NOT NULL,
+    ref_id      TEXT,
+    label       TEXT NOT NULL,
+    done        BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE (user_id, item_type, ref_id, label)
+);
+
+CREATE TABLE IF NOT EXISTS assistant_messages (
+    id          SERIAL PRIMARY KEY,
+    user_id     INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    role        TEXT NOT NULL,
+    content     TEXT NOT NULL,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_assistant_messages_user ON assistant_messages(user_id, id);
+
+CREATE TABLE IF NOT EXISTS share_links (
+    token       TEXT PRIMARY KEY,
+    user_id     INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS exam_calendar (
+    id               SERIAL PRIMARY KEY,
+    exam_name        TEXT NOT NULL UNIQUE,
+    exam_code        TEXT,
+    typical_window   TEXT,
+    typical_month    SMALLINT,
+    next_cycle       TEXT,
+    education_level  TEXT,
+    streams          TEXT,
+    clusters         TEXT,
+    official_url     TEXT,
+    notes            TEXT
+);
+
+CREATE TABLE IF NOT EXISTS career_institutes (
+    id              SERIAL PRIMARY KEY,
+    career_id       UUID NOT NULL REFERENCES careers(career_id) ON DELETE CASCADE,
+    name            TEXT NOT NULL,
+    kind            TEXT,
+    entrance        TEXT,
+    typical_fees    TEXT,
+    notes           TEXT
+);
+
+CREATE TABLE IF NOT EXISTS related_careers (
+    career_id          UUID NOT NULL REFERENCES careers(career_id) ON DELETE CASCADE,
+    related_career_id  UUID NOT NULL REFERENCES careers(career_id) ON DELETE CASCADE,
+    PRIMARY KEY (career_id, related_career_id)
+);
+
+CREATE TABLE IF NOT EXISTS app_meta (
+    key     TEXT PRIMARY KEY,
+    value   TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_careers_verified ON careers(is_verified);
+CREATE INDEX IF NOT EXISTS idx_exam_calendar_month ON exam_calendar(typical_month);
+CREATE INDEX IF NOT EXISTS idx_career_institutes_career ON career_institutes(career_id);
 
 -- Government job notifications, populated by the pathwise-mcp MCP server: an
 -- AI client extracts these fields from an official PDF notification and
@@ -496,7 +574,14 @@ CREATE TABLE IF NOT EXISTS gov_job_notifications (
     -- "negative_marking": "...", "parts": [{"name": "...", "topics": [...]}]}],
     -- "language_note": "..."} — one entry per stage (e.g. keyed by
     -- "preliminary"/"main") when a notification has more than one.
-    syllabus                JSONB
+    syllabus                JSONB,
+    -- Search / display fields written by pathwise-mcp (kept here so a
+    -- DROP SCHEMA + schema.sql rebuild does not lose the columns).
+    commission              TEXT,
+    state                   TEXT,
+    exam_name               TEXT,
+    exam_kind               TEXT,
+    search_document         TEXT
 );
 
 CREATE TABLE IF NOT EXISTS gov_job_posts (
@@ -515,6 +600,13 @@ CREATE TABLE IF NOT EXISTS gov_job_posts (
 
 CREATE INDEX IF NOT EXISTS idx_gov_job_posts_notification ON gov_job_posts(notification_id);
 
+CREATE TABLE IF NOT EXISTS saved_gov_jobs (
+    user_id         INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    notification_id INT NOT NULL REFERENCES gov_job_notifications(id) ON DELETE CASCADE,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (user_id, notification_id)
+);
+
 -- ----------------------------------------------------------------------------
 -- APP-FACING VIEW: flattens the normalized career tables into the shape the
 -- Flask app's templates expect (one row per career, skills/exams aggregated).
@@ -529,16 +621,26 @@ SELECT
     cc.name AS cluster,
     c.description,
     d.current_demand::TEXT AS demand,
+    d.future_demand::TEXT AS future_demand,
     sal.min_salary_inr::BIGINT AS salary_min,
     sal.max_salary_inr::BIGINT AS salary_max,
+    sal_mid.min_salary_inr::BIGINT AS salary_mid_min,
+    sal_mid.max_salary_inr::BIGINT AS salary_mid_max,
     (SELECT string_agg(s.name, ', ' ORDER BY s.name)
        FROM career_skills cs JOIN skills s ON s.skill_id = cs.skill_id
        WHERE cs.career_id = c.career_id) AS skills,
     ar.future_proof_recommendation AS ai_impact,
+    ar.risk_level::TEXT AS automation_risk,
     c.min_education_qualification AS education_path,
     (SELECT string_agg(e.name, ', ' ORDER BY e.name)
        FROM career_entrance_exams ce JOIN entrance_exams e ON e.exam_id = ce.exam_id
        WHERE ce.career_id = c.career_id) AS exams,
+    (SELECT string_agg(r.code, '' ORDER BY r.code)
+       FROM career_riasec cr JOIN riasec_types r ON r.riasec_id = cr.riasec_id
+       WHERE cr.career_id = c.career_id) AS riasec,
+    wlb.rating::TEXT AS wlb,
+    rw.potential::TEXT AS remote_work,
+    c.is_verified,
     c.source,
     c.source_url,
     c.last_synced_at
@@ -546,7 +648,10 @@ FROM careers c
 LEFT JOIN career_categories cc            ON cc.category_id = c.career_category_id
 LEFT JOIN career_demand d                 ON d.career_id = c.career_id
 LEFT JOIN career_salary_india sal         ON sal.career_id = c.career_id AND sal.level = 'Entry Level (0-3 Yrs)'
-LEFT JOIN career_automation_risk ar       ON ar.career_id = c.career_id;
+LEFT JOIN career_salary_india sal_mid     ON sal_mid.career_id = c.career_id AND sal_mid.level = 'Mid-Level (4-8 Yrs)'
+LEFT JOIN career_automation_risk ar       ON ar.career_id = c.career_id
+LEFT JOIN career_work_life_balance wlb    ON wlb.career_id = c.career_id
+LEFT JOIN career_remote_work rw           ON rw.career_id = c.career_id;
 
 -- ============================================================================
 -- USEFUL COMPOSITE VIEW: quick summary row per career for list/search pages

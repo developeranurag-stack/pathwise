@@ -1,41 +1,84 @@
 {% extends "base.html" %}
-{% block title %}Explore Careers — PathWise India{% endblock %}
+{% block title %}{{ t('careers.title') }} — PathWise India{% endblock %}
 {% block content %}
 <div class="max-w-6xl mx-auto px-4 sm:px-6 py-10">
   <span class="badge bg-brand-100 text-brand-700 mb-3">Step 2 · Explore Careers</span>
-  <h1 class="text-3xl font-extrabold mb-2">Explore careers</h1>
-  <p class="text-slate-600 mb-6">Job outlook, salary ranges, required skills, and AI impact for each path.</p>
+  <h1 class="text-3xl font-extrabold mb-2">{{ t('careers.title') }}</h1>
+  <p class="text-slate-600 mb-6">{{ t('careers.subtitle') }}</p>
 
-  <div class="flex gap-2 mb-8 overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0 sm:flex-wrap">
-    <a href="{{ url_for('careers_list') }}" class="tap shrink-0 px-3.5 py-2 rounded-full text-sm font-medium border {% if not active_cluster %}bg-brand-600 text-white border-brand-600{% else %}bg-white text-slate-600 border-slate-300 active:border-brand-400{% endif %}">All</a>
+  <form method="GET" class="flex flex-col sm:flex-row gap-2 mb-4">
+    {% if active_cluster %}<input type="hidden" name="cluster" value="{{ active_cluster }}">{% endif %}
+    {% if show_all %}<input type="hidden" name="all" value="1">{% endif %}
+    <input type="search" name="q" value="{{ q }}" placeholder="{{ t('careers.search_ph') }}"
+      class="flex-1 rounded-xl border border-slate-300 px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500">
+    <select name="sort" class="rounded-xl border border-slate-300 px-3 py-2.5 text-sm">
+      <option value="name" {% if sort == 'name' %}selected{% endif %}>Name</option>
+      <option value="demand" {% if sort == 'demand' %}selected{% endif %}>Demand</option>
+      <option value="salary" {% if sort == 'salary' %}selected{% endif %}>Salary</option>
+    </select>
+    <button type="submit" class="tap px-4 py-2.5 rounded-xl bg-brand-600 text-white text-sm font-semibold">{{ t('common.search') }}</button>
+  </form>
+
+  <div class="flex gap-2 mb-4 overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0 sm:flex-wrap">
+    <a href="{{ url_for('careers_list', q=q, sort=sort, all=1 if show_all else None) }}" class="tap shrink-0 px-3.5 py-2 rounded-full text-sm font-medium border {% if not active_cluster %}bg-brand-600 text-white border-brand-600{% else %}bg-white text-slate-600 border-slate-300{% endif %}">{{ t('common.all') }}</a>
     {% for key, label in clusters %}
-    <a href="{{ url_for('careers_list', cluster=key) }}" class="tap shrink-0 px-3.5 py-2 rounded-full text-sm font-medium border {% if active_cluster == key %}bg-brand-600 text-white border-brand-600{% else %}bg-white text-slate-600 border-slate-300 active:border-brand-400{% endif %}">{{ label }}</a>
+    <a href="{{ url_for('careers_list', cluster=key, q=q, sort=sort, all=1 if show_all else None) }}" class="tap shrink-0 px-3.5 py-2 rounded-full text-sm font-medium border {% if active_cluster == key %}bg-brand-600 text-white border-brand-600{% else %}bg-white text-slate-600 border-slate-300{% endif %}">{{ label }}</a>
     {% endfor %}
   </div>
 
-  <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
-    {% for c in careers %}
-    <a href="{{ url_for('career_detail', slug=c.slug) }}" class="tap bg-white border border-slate-200 rounded-2xl p-5 shadow-sm active:border-brand-400 block">
-      <div class="flex items-start justify-between mb-2">
-        <h3 class="font-bold text-lg">{{ c.name }}</h3>
-        {% if c.career_id in recommended_ids %}
-        <span class="badge bg-amber-100 text-amber-700 shrink-0">★ For you</span>
-        {% endif %}
-      </div>
-      <p class="text-sm text-slate-600 mb-3 line-clamp-2">{{ c.description }}</p>
-      <div class="flex flex-wrap gap-2 text-xs">
-        <span class="badge bg-slate-100 text-slate-700">Demand: {{ c.demand }}</span>
-        <span class="badge bg-emerald-50 text-emerald-700">₹{{ '{:,}'.format(c.salary_min) }}–{{ '{:,}'.format(c.salary_max) }}</span>
-        {% if c.career_id in saved_ids %}
-        <span class="badge bg-brand-100 text-brand-700">✓ Saved</span>
-        {% endif %}
-      </div>
-    </a>
-    {% endfor %}
+  <div class="flex flex-wrap items-center gap-3 mb-6 text-sm">
+    {% if show_all %}
+    <a href="{{ url_for('careers_list', cluster=active_cluster or None, q=q, sort=sort) }}" class="text-brand-700 font-semibold">{{ t('careers.show_verified') }}</a>
+    {% else %}
+    <a href="{{ url_for('careers_list', cluster=active_cluster or None, q=q, sort=sort, all=1) }}" class="text-amber-700 font-semibold">{{ t('careers.show_all') }} ({{ unverified_count }})</a>
+    {% endif %}
+    <span class="text-slate-400">Select up to 3, then compare.</span>
   </div>
+
+  <form method="GET" action="{{ url_for('careers_compare') }}" id="compare-form">
+    <input type="hidden" name="slugs" id="compare-slugs" value="">
+    <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
+      {% for c in careers %}
+      <div class="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
+        <div class="flex items-start justify-between mb-2 gap-2">
+          <a href="{{ url_for('career_detail', slug=c.slug) }}" class="font-bold text-lg hover:text-brand-700">{{ c.name }}</a>
+          <label class="shrink-0 text-xs text-slate-400 flex items-center gap-1">
+            <input type="checkbox" class="compare-cb accent-brand-600" value="{{ c.slug }}"> {{ t('common.compare') }}
+          </label>
+        </div>
+        <div class="flex flex-wrap gap-1 mb-2">
+          {% if c.is_verified %}<span class="badge bg-emerald-50 text-emerald-700">{{ t('common.verified') }}</span>
+          {% else %}<span class="badge bg-amber-50 text-amber-800">{{ t('common.unverified') }}</span>{% endif %}
+          {% if c.career_id in recommended_ids %}<span class="badge bg-amber-100 text-amber-700">★ {{ t('common.for_you') }}</span>{% endif %}
+          {% if c.career_id in saved_ids %}<span class="badge bg-brand-100 text-brand-700">✓ {{ t('common.saved') }}</span>{% endif %}
+        </div>
+        <p class="text-sm text-slate-600 mb-3 line-clamp-2">{{ c.description }}</p>
+        <div class="flex flex-wrap gap-2 text-xs">
+          <span class="badge bg-slate-100 text-slate-700">Demand: {{ c.demand or '—' }}</span>
+          {% if c.salary_min %}
+          <span class="badge bg-emerald-50 text-emerald-700">₹{{ '{:,}'.format(c.salary_min) }}–{{ '{:,}'.format(c.salary_max or 0) }}</span>
+          {% endif %}
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    <div class="mt-4">
+      <button type="submit" class="tap px-4 py-2.5 rounded-xl bg-white border border-slate-300 text-sm font-semibold">{{ t('common.compare') }} selected</button>
+    </div>
+  </form>
 
   {% if not careers %}
-  <p class="text-slate-500 text-center py-12">No careers found in this category yet.</p>
+  <p class="text-slate-500 text-center py-12">No careers found. Try another search or show placeholder careers.</p>
   {% endif %}
 </div>
+<script>
+(function () {
+  const form = document.getElementById('compare-form');
+  const hidden = document.getElementById('compare-slugs');
+  form.addEventListener('submit', function () {
+    const slugs = Array.from(document.querySelectorAll('.compare-cb:checked')).map(function (el) { return el.value; }).slice(0, 3);
+    hidden.value = slugs.join(',');
+  });
+})();
+</script>
 {% endblock %}

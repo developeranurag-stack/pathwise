@@ -6255,6 +6255,7 @@ EXTRA_CAREERS = [
          exams='Not specified'),
 ]
 
+CORE_CAREER_SLUGS = [c["slug"] for c in CAREERS]
 CAREERS = CAREERS + EXTRA_CAREERS
 # categories: list matches user-selected category, or "All" for everyone
 # states: list of states, or "All" for All-India schemes
@@ -6294,7 +6295,8 @@ SCHOLARSHIPS = [
          education_level="UG", states="All", categories="All",
          gender="All", income_ceiling=800000, amount="Rs 50,000/year",
          deadline="2026-12-15", apply_url="https://www.aicte-pragati-saksham-freeship.in",
-         documents="Disability certificate, income certificate, admission letter"),
+         documents="Disability certificate, income certificate, admission letter",
+         requires_disability=True),
     dict(name="Maulana Azad National Fellowship", provider="Ministry of Minority Affairs", type="Government",
          description="Fellowship for minority community students pursuing M.Phil/PhD.",
          education_level="PG", states="All", categories="Minority",
@@ -6440,59 +6442,161 @@ def _get_or_create(conn, table, id_col, name_col, name, extra=None):
     return cur.fetchone()[id_col]
 
 
-def seed_careers(conn, careers):
-    for c in careers:
-        category_id = _get_or_create(conn, "career_categories", "category_id", "name", c["cluster"])
-        career_code = "CAR-" + c["slug"].upper()
+def _bulk_values(cur, sql_prefix, rows, page=200, returning=False):
+    """Insert many rows in a few multi-VALUES statements (one round-trip per page)."""
+    if not rows:
+        return []
+    width = len(rows[0])
+    placeholders = "(" + ",".join(["%s"] * width) + ")"
+    fetched = []
+    for i in range(0, len(rows), page):
+        chunk = rows[i:i + page]
+        values_sql = ",".join([placeholders] * len(chunk))
+        flat = [value for row in chunk for value in row]
+        suffix = " RETURNING career_id, slug" if returning else ""
+        cur.execute(sql_prefix + " VALUES " + values_sql + suffix, flat)
+        if returning:
+            fetched.extend(cur.fetchall())
+    return fetched
 
-        cur = conn.execute(
-            """INSERT INTO careers (career_code, slug, career_name, career_category_id, description,
-               min_education_qualification, source)
-               VALUES (?,?,?,?,?,?,'manual') RETURNING career_id""",
-            (career_code, c["slug"], c["name"], category_id, c["description"], c["education_path"]),
+
+def seed_careers(conn, careers, progress=None):
+    """Load careers into the normalized tables.
+
+    Uses batched multi-row INSERTs so a remote Postgres (Neon) is not hit
+    once per field. Existing slugs are skipped so a killed run can resume.
+    """
+    raw = getattr(conn, "_conn", conn)
+    cur = raw.cursor()
+
+    existing = {row["slug"] for row in conn.execute("SELECT slug FROM careers").fetchall()}
+    pending = [c for c in careers if c["slug"] not in existing]
+    if progress:
+        progress(len(careers) - len(pending), len(careers))
+    if not pending:
+        return
+
+    categories = sorted({c["cluster"] for c in pending})
+    cur.execute(
+        """INSERT INTO career_categories (name)
+           SELECT x FROM unnest(%s::text[]) AS x
+           ON CONFLICT (name) DO NOTHING""",
+        (categories,),
+    )
+    cur.execute("SELECT category_id, name FROM career_categories")
+    category_ids = {row["name"]: row["category_id"] for row in cur.fetchall()}
+
+    skills = sorted({
+        s.strip()
+        for c in pending
+        for s in c["skills"].split(",")
+        if s.strip()
+    })
+    if skills:
+        cur.execute(
+            """INSERT INTO skills (name, skill_type)
+               SELECT x, 'Technical'::skill_type FROM unnest(%s::text[]) AS x
+               ON CONFLICT (name) DO NOTHING""",
+            (skills,),
         )
-        career_id = cur.fetchone()["career_id"]
+    cur.execute("SELECT skill_id, name FROM skills")
+    skill_ids = {row["name"]: row["skill_id"] for row in cur.fetchall()}
 
+    exams = sorted({
+        e.strip()
+        for c in pending
+        for e in c["exams"].split(",")
+        if e.strip()
+    })
+    if exams:
+        cur.execute(
+            """INSERT INTO entrance_exams (name, exam_type)
+               SELECT x, 'National'::exam_type FROM unnest(%s::text[]) AS x
+               ON CONFLICT (name) DO NOTHING""",
+            (exams,),
+        )
+    cur.execute("SELECT exam_id, name FROM entrance_exams")
+    exam_ids = {row["name"]: row["exam_id"] for row in cur.fetchall()}
+
+    career_rows = []
+    for c in pending:
+        career_rows.append((
+            "CAR-" + c["slug"].upper(),
+            c["slug"],
+            c["name"],
+            category_ids[c["cluster"]],
+            c["description"],
+            c["education_path"],
+            "manual",
+        ))
+    inserted = _bulk_values(
+        cur,
+        """INSERT INTO careers (career_code, slug, career_name, career_category_id,
+               description, min_education_qualification, source) """,
+        career_rows,
+        page=100,
+        returning=True,
+    )
+    slug_to_id = {row["slug"]: row["career_id"] for row in inserted}
+
+    demand_rows = []
+    salary_rows = []
+    risk_rows = []
+    skill_rows = []
+    exam_rows = []
+    for c in pending:
+        career_id = slug_to_id[c["slug"]]
         demand = _DEMAND_MAP.get(c["demand"], "Medium")
-        conn.execute(
-            "INSERT INTO career_demand (career_id, current_demand, future_demand) VALUES (?,?,?)",
-            (career_id, demand, _FUTURE_DEMAND_MAP.get(demand, "Medium")),
-        )
-
-        conn.execute(
-            """INSERT INTO career_salary_india (career_id, level, min_salary_inr, max_salary_inr)
-               VALUES (?, 'Entry Level (0-3 Yrs)', ?, ?)""",
-            (career_id, c["salary_min"], c["salary_max"]),
-        )
-
-        conn.execute(
-            """INSERT INTO career_automation_risk (career_id, risk_level, future_proof_recommendation)
-               VALUES (?, 'Moderate', ?)""",
-            (career_id, c["ai_impact"]),
-        )
-
+        demand_rows.append((career_id, demand, _FUTURE_DEMAND_MAP.get(demand, "Medium")))
+        salary_rows.append((career_id, "Entry Level (0-3 Yrs)", c["salary_min"], c["salary_max"]))
+        risk_rows.append((career_id, "Moderate", c["ai_impact"]))
         for name in [s.strip() for s in c["skills"].split(",") if s.strip()]:
-            skill_id = _get_or_create(conn, "skills", "skill_id", "name", name, extra={"skill_type": "Technical"})
-            conn.execute(
-                "INSERT INTO career_skills (career_id, skill_id) VALUES (?,?) ON CONFLICT DO NOTHING",
-                (career_id, skill_id),
-            )
-
+            skill_rows.append((career_id, skill_ids[name]))
         for name in [e.strip() for e in c["exams"].split(",") if e.strip()]:
-            exam_id = _get_or_create(conn, "entrance_exams", "exam_id", "name", name, extra={"exam_type": "National"})
-            conn.execute(
-                "INSERT INTO career_entrance_exams (career_id, exam_id) VALUES (?,?) ON CONFLICT DO NOTHING",
-                (career_id, exam_id),
-            )
+            exam_rows.append((career_id, exam_ids[name]))
+
+    _bulk_values(
+        cur,
+        "INSERT INTO career_demand (career_id, current_demand, future_demand) ",
+        demand_rows,
+    )
+    _bulk_values(
+        cur,
+        """INSERT INTO career_salary_india (career_id, level, min_salary_inr, max_salary_inr) """,
+        salary_rows,
+    )
+    _bulk_values(
+        cur,
+        """INSERT INTO career_automation_risk
+           (career_id, risk_level, future_proof_recommendation) """,
+        risk_rows,
+    )
+    _bulk_values(
+        cur,
+        "INSERT INTO career_skills (career_id, skill_id) ",
+        skill_rows,
+    )
+    _bulk_values(
+        cur,
+        "INSERT INTO career_entrance_exams (career_id, exam_id) ",
+        exam_rows,
+    )
+    raw.commit()
+    if progress:
+        progress(len(careers), len(careers))
 
 
 def seed_scholarships(conn, scholarships):
     for s in scholarships:
         conn.execute(
             """INSERT INTO scholarships (name, provider, type, description, education_level,
-               states, categories, gender, income_ceiling, amount, deadline, apply_url, documents)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+               states, categories, gender, income_ceiling, amount, deadline, apply_url, documents,
+               requires_disability, requires_minority)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (s["name"], s["provider"], s["type"], s["description"], s["education_level"],
              s["states"], s["categories"], s["gender"], s["income_ceiling"], s["amount"],
-             s["deadline"], s["apply_url"], s["documents"]),
+             s["deadline"], s["apply_url"], s["documents"],
+             bool(s.get("requires_disability")),
+             bool(s.get("requires_minority") or "Minority" in (s.get("categories") or "")),
+            ),
         )

@@ -1,10 +1,10 @@
 {% extends "base.html" %}
-{% block title %}Discover yourself — PathWise India{% endblock %}
+{% block title %}{{ t('onboard.title') }} — PathWise India{% endblock %}
 {% block content %}
 <div class="max-w-2xl mx-auto px-4 sm:px-6 py-8 sm:py-12">
   <span class="badge bg-brand-100 text-brand-700 mb-3">Step 1 · Discover Yourself</span>
-  <h1 class="text-2xl sm:text-3xl font-extrabold mb-2">Tell us about you</h1>
-  <p class="text-slate-600 mb-8">This helps us recommend careers and match you with scholarships you're actually eligible for.</p>
+  <h1 class="text-2xl sm:text-3xl font-extrabold mb-2">{{ t('onboard.title') }}</h1>
+  <p class="text-slate-600 mb-8">{{ t('onboard.subtitle') }}</p>
 
   <form method="POST" class="bg-white border border-slate-200 rounded-3xl p-5 sm:p-6 shadow-sm space-y-7">
 
@@ -16,6 +16,38 @@
         <option value="{{ level }}" {% if profile and profile.education_level == level %}selected{% endif %}>{{ level }}</option>
         {% endfor %}
       </select>
+    </div>
+
+    <div>
+      <label class="block text-sm font-semibold mb-2">Current or planned stream</label>
+      <select name="stream" class="w-full rounded-xl border border-slate-300 px-3.5 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500">
+        <option value="">Select...</option>
+        {% for key, label in streams %}
+        <option value="{{ key }}" {% if profile and profile.stream == key %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+      <p class="text-xs text-slate-400 mt-1">Used to rank careers (e.g. PCB → medicine, PCM → engineering).</p>
+    </div>
+
+    <div class="grid sm:grid-cols-2 gap-4">
+      <div>
+        <label class="block text-sm font-semibold mb-2">Board</label>
+        <select name="board" class="w-full rounded-xl border border-slate-300 px-3.5 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500">
+          <option value="">Optional</option>
+          {% for b in boards %}
+          <option value="{{ b }}" {% if profile and profile.board == b %}selected{% endif %}>{{ b }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label class="block text-sm font-semibold mb-2">Recent marks (approx.)</label>
+        <select name="marks_band" class="w-full rounded-xl border border-slate-300 px-3.5 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500">
+          <option value="">Optional</option>
+          {% for key, label in marks_bands %}
+          <option value="{{ key }}" {% if profile and profile.marks_band == key %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
     </div>
 
     <div>
@@ -58,6 +90,36 @@
     </div>
 
     <div>
+      <label class="block text-sm font-semibold mb-2">Eligibility flags (optional)</label>
+      <div class="grid sm:grid-cols-2 gap-2">
+        <label class="tap flex items-center gap-2 border border-slate-200 rounded-xl px-3 py-3 text-sm cursor-pointer has-[:checked]:border-brand-500 has-[:checked]:bg-brand-50">
+          <input type="checkbox" name="has_disability" {% if profile and profile.has_disability %}checked{% endif %} class="accent-brand-600"> Person with disability
+        </label>
+        <label class="tap flex items-center gap-2 border border-slate-200 rounded-xl px-3 py-3 text-sm cursor-pointer has-[:checked]:border-brand-500 has-[:checked]:bg-brand-50">
+          <input type="checkbox" name="is_minority" {% if profile and profile.is_minority %}checked{% endif %} class="accent-brand-600"> Minority community
+        </label>
+        <label class="tap flex items-center gap-2 border border-slate-200 rounded-xl px-3 py-3 text-sm cursor-pointer has-[:checked]:border-brand-500 has-[:checked]:bg-brand-50">
+          <input type="checkbox" name="is_rural" {% if profile and profile.is_rural %}checked{% endif %} class="accent-brand-600"> Rural / village
+        </label>
+        <label class="tap flex items-center gap-2 border border-slate-200 rounded-xl px-3 py-3 text-sm cursor-pointer has-[:checked]:border-brand-500 has-[:checked]:bg-brand-50">
+          <input type="checkbox" name="is_first_generation" {% if profile and profile.is_first_generation %}checked{% endif %} class="accent-brand-600"> First-generation learner
+        </label>
+      </div>
+    </div>
+
+    <div>
+      <label class="block text-sm font-semibold mb-2">Subjects you like (optional)</label>
+      <div class="grid grid-cols-2 gap-2">
+        {% for subj in subject_options %}
+        <label class="tap flex items-center gap-2 border border-slate-200 rounded-xl px-3 py-2.5 text-sm cursor-pointer has-[:checked]:border-brand-500 has-[:checked]:bg-brand-50">
+          <input type="checkbox" name="subjects" value="{{ subj }}" {% if subj in current_subjects %}checked{% endif %} class="accent-brand-600 w-4 h-4 shrink-0">
+          {{ subj }}
+        </label>
+        {% endfor %}
+      </div>
+    </div>
+
+    <div>
       <label class="block text-sm font-semibold mb-2">What are you interested in? (pick a few)</label>
       <div class="grid grid-cols-2 gap-2">
         {% for key, label in clusters %}
@@ -69,7 +131,8 @@
       </div>
     </div>
 
-    <button type="submit" class="tap w-full py-3.5 rounded-xl bg-brand-600 text-white font-semibold active:bg-brand-700">Save profile & see my matches</button>
+    <button type="submit" class="tap w-full py-3.5 rounded-xl bg-brand-600 text-white font-semibold active:bg-brand-700">{{ t('onboard.save') }}</button>
+    <p class="text-center text-sm text-slate-500">Want a better ranking? <a href="{{ url_for('interest_quiz') }}" class="text-brand-700 font-semibold hover:underline">Take the 12-question interest quiz</a>.</p>
   </form>
 </div>
 {% endblock %}

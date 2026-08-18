@@ -2,10 +2,11 @@
 
 Discover your future. Find the funding to reach it.
 
-An MVP covering the core PathWise journey: profile-based career recommendations
-(Step 1-2) and scholarship matching with a save/roadmap dashboard (Step 4-5).
-Education-path details are folded into each career page (Step 3). AI chat
-features, payments, and B2B dashboards are out of scope for this MVP.
+An MVP covering the PathWise journey: profile + interest quiz, career explorer
+(with search, compare, verified vs placeholder data), education path and exam
+calendar (Step 3), scholarship matching with reasons, government job
+notifications, a save/checklist roadmap, and a Hindi-first assistant.
+Payments and school/counselor dashboards are out of scope.
 
 ## Stack
 
@@ -178,18 +179,24 @@ items — safe to run on every staging deploy.
 ## What's implemented
 
 - Auth: register / login / logout (session-based, hashed passwords)
-- Onboarding quiz: education level, state, category, gender, income, interests
-- Career explorer: browse/filter by interest cluster, detail pages with salary,
-  demand, skills, AI impact, education path, exams
-- Scholarship finder: browse/filter by type, eligibility matching against the
-  student's profile (education level, state, category, gender, income ceiling)
-- Dashboard/roadmap: saved careers & scholarships, deadline visibility,
-  personalized recommendations
+- Onboarding: education, stream, board, marks, state, category, gender, income,
+  disability/minority/rural flags, subjects, interests
+- RIASEC interest quiz (12 questions) used in career ranking
+- Career explorer: search, sort, 50+ editorially verified careers (plus
+  placeholder titles behind a toggle), compare 2–3 careers, institutes,
+  year-by-year path, related careers / exams / scholarships
+- Scholarship finder: search, match reasons (why / why not), application status
+- Government jobs: search and filters (open vs historical, commission, state),
+  save to roadmap, eligibility notes
+- Exam calendar for JEE, NEET, CUET, CLAT, UPSC, SSC, NDA, and others
+- Dashboard: next steps, deadlines, document checklist, parent share link
+- Assistant: Hindi-first tool-using chat, persisted history, save/profile tools
+- English / Hindi UI toggle
 
 ## Not yet built
 
-AI chat assistant, resume/essay review, application checklist/document tracking,
-reminders, premium billing, school/counselor (B2B) dashboards.
+Resume/essay review, email/WhatsApp reminder delivery, premium billing,
+school/counselor (B2B) dashboards, a full college database.
 
 Scholarship data is illustrative for demo purposes — verify current eligibility
 and deadlines on official portals before applying.

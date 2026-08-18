@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% block title %}{{ t('compare.title') }} — PathWise India{% endblock %}
+{% block content %}
+<div class="max-w-6xl mx-auto px-4 sm:px-6 py-8">
+  <h1 class="text-2xl sm:text-3xl font-extrabold mb-2">{{ t('compare.title') }}</h1>
+  <p class="text-slate-600 mb-6 text-sm">Pick 2–3 careers from the list. Figures on unverified rows are placeholders.</p>
+
+  {% if careers|length < 2 %}
+  <p class="text-slate-600">Select at least two careers to compare. <a href="{{ url_for('careers_list') }}" class="text-brand-700 font-semibold">Back to careers</a></p>
+  {% else %}
+  <div class="overflow-x-auto bg-white border border-slate-200 rounded-2xl">
+    <table class="w-full text-sm">
+      <thead>
+        <tr class="text-left border-b border-slate-200">
+          <th class="p-3 text-slate-500 font-semibold">Field</th>
+          {% for c in careers %}
+          <th class="p-3"><a href="{{ url_for('career_detail', slug=c.slug) }}" class="text-brand-700 font-bold hover:underline">{{ c.name }}</a></th>
+          {% endfor %}
+        </tr>
+      </thead>
+      <tbody>
+        {% set rows = [
+          ('Verified', none),
+          ('Cluster', none),
+          ('Demand', none),
+          ('Entry salary', none),
+          ('Mid salary', none),
+          ('Exams', none),
+          ('Work-life', none),
+          ('Remote', none),
+          ('RIASEC', none),
+          ('Education path', none),
+        ] %}
+        <tr class="border-b border-slate-100 align-top">
+          <td class="p-3 text-slate-500">Verified</td>
+          {% for c in careers %}<td class="p-3">{% if c.is_verified %}Yes{% else %}No{% endif %}</td>{% endfor %}
+        </tr>
+        <tr class="border-b border-slate-100 align-top">
+          <td class="p-3 text-slate-500">Cluster</td>
+          {% for c in careers %}<td class="p-3">{{ c.cluster }}</td>{% endfor %}
+        </tr>
+        <tr class="border-b border-slate-100 align-top">
+          <td class="p-3 text-slate-500">Demand</td>
+          {% for c in careers %}<td class="p-3">{{ c.demand or '—' }}</td>{% endfor %}
+        </tr>
+        <tr class="border-b border-slate-100 align-top">
+          <td class="p-3 text-slate-500">Entry salary</td>
+          {% for c in careers %}<td class="p-3">{% if c.salary_min %}₹{{ '{:,}'.format(c.salary_min) }}–{{ '{:,}'.format(c.salary_max or 0) }}{% else %}—{% endif %}</td>{% endfor %}
+        </tr>
+        <tr class="border-b border-slate-100 align-top">
+          <td class="p-3 text-slate-500">Mid salary</td>
+          {% for c in careers %}<td class="p-3">{% if c.salary_mid_min %}₹{{ '{:,}'.format(c.salary_mid_min) }}–{{ '{:,}'.format(c.salary_mid_max or 0) }}{% else %}—{% endif %}</td>{% endfor %}
+        </tr>
+        <tr class="border-b border-slate-100 align-top">
+          <td class="p-3 text-slate-500">Exams</td>
+          {% for c in careers %}<td class="p-3">{{ c.exams or '—' }}</td>{% endfor %}
+        </tr>
+        <tr class="border-b border-slate-100 align-top">
+          <td class="p-3 text-slate-500">Work-life</td>
+          {% for c in careers %}<td class="p-3">{{ c.wlb or '—' }}</td>{% endfor %}
+        </tr>
+        <tr class="border-b border-slate-100 align-top">
+          <td class="p-3 text-slate-500">Remote</td>
+          {% for c in careers %}<td class="p-3">{{ c.remote_work or '—' }}</td>{% endfor %}
+        </tr>
+        <tr class="border-b border-slate-100 align-top">
+          <td class="p-3 text-slate-500">RIASEC</td>
+          {% for c in careers %}<td class="p-3">{{ c.riasec or '—' }}</td>{% endfor %}
+        </tr>
+        <tr class="align-top">
+          <td class="p-3 text-slate-500">Education path</td>
+          {% for c in careers %}<td class="p-3 text-slate-700">{{ c.education_path }}</td>{% endfor %}
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

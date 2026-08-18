@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block title %}{{ t('quiz.title') }} — PathWise India{% endblock %}
+{% block content %}
+<div class="max-w-2xl mx-auto px-4 sm:px-6 py-8">
+  <h1 class="text-3xl font-extrabold mb-2">{{ t('quiz.title') }}</h1>
+  <p class="text-slate-600 mb-6">{{ t('quiz.subtitle') }}</p>
+  {% if current_codes %}
+  <p class="text-sm text-brand-700 mb-4">Saved type: {{ current_codes | join('') }}</p>
+  {% endif %}
+  <form method="POST" class="bg-white border border-slate-200 rounded-3xl p-5 sm:p-6 space-y-4">
+    {% for qid, letter, en, hi in questions %}
+    <label class="tap flex items-start gap-3 border border-slate-200 rounded-xl px-3 py-3 cursor-pointer has-[:checked]:border-brand-500 has-[:checked]:bg-brand-50">
+      <input type="checkbox" name="{{ qid }}" value="yes" class="accent-brand-600 mt-1">
+      <span class="text-sm">{{ hi if lang == 'hi' else en }} <span class="text-slate-400">({{ letter }})</span></span>
+    </label>
+    {% endfor %}
+    <button type="submit" class="tap w-full py-3.5 rounded-xl bg-brand-600 text-white font-semibold">Save my type</button>
+  </form>
+</div>
+{% endblock %}
