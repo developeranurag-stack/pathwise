@@ -150,7 +150,7 @@
     <h2 class="font-bold mb-3">Related government notifications</h2>
     <ul class="space-y-2 text-sm">
       {% for j in related_jobs %}
-      <li><a href="{{ url_for('gov_job_detail', job_id=j.id) }}" class="font-semibold text-brand-700 hover:underline">{{ j.exam_name or j.job_title }}</a></li>
+      <li><a href="{{ url_for('gov_job_detail', job_id=j.id) }}" class="font-semibold text-brand-700 hover:underline">{{ j.display_title or j.exam_name or j.job_title }}</a></li>
       {% endfor %}
     </ul>
   </div>

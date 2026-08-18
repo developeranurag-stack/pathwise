@@ -47,6 +47,7 @@ from pathlib import Path
 
 import db as dbmod
 from psycopg.types.json import Jsonb
+from gov_jobs import backfill_issuer_fields, build_search_document
 
 
 def insert_gov_job(notification: dict, posts: list = None):
@@ -56,6 +57,15 @@ def insert_gov_job(notification: dict, posts: list = None):
     """
     if not notification.get("job_title"):
         raise ValueError("job_title is required")
+
+    notification = backfill_issuer_fields(notification)
+    posts = posts or []
+    search_document = build_search_document(notification, posts)
+    exam_kind = (notification.get("exam_kind") or "").strip()
+    if exam_kind not in (
+        "combined_exam", "multi_post_ad", "single_post", "departmental_exam"
+    ):
+        exam_kind = None
 
     conn = dbmod.connect()
     cur = conn.cursor()
@@ -68,9 +78,11 @@ def insert_gov_job(notification: dict, posts: list = None):
                 nationality, qualification, age_limit, age_relaxation,
                 age_relaxation_details, apply_start_date, apply_end_date,
                 exam_date, advertisement_number, application_fee, official_url,
-                local_pdf_path, source, translations, syllabus
+                local_pdf_path, source, translations, syllabus,
+                commission, state, exam_name, exam_kind, search_document
             ) VALUES (
-                %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+                %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                %s, %s, %s, %s, %s
             ) RETURNING id
         """, (
             notification.get("job_title"),
@@ -92,6 +104,11 @@ def insert_gov_job(notification: dict, posts: list = None):
             notification.get("source", "ai-direct"),
             Jsonb(notification.get("translations")) if notification.get("translations") else None,
             Jsonb(notification.get("syllabus")) if notification.get("syllabus") else None,
+            notification.get("commission"),
+            notification.get("state"),
+            notification.get("exam_name"),
+            exam_kind,
+            search_document or None,
         ))
         notif_id = cur.fetchone()["id"]
 

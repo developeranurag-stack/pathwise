@@ -16,6 +16,7 @@ from gov_job_aliases import (
     row_search_haystack,
     sql_terms,
 )
+from gov_jobs import backfill_issuer_fields, build_search_document
 
 # openai imported lazily inside _client() so the rest of the app (and clear_db.py etc)
 # can start without the optional openai package.
@@ -239,13 +240,15 @@ TOOLS = [
                            "or a screenshot description the user pasted. Do NOT call this for a bare "
                            "question like 'cgpsc batao' — search_gov_jobs first. "
                            "Pass a JSON string. Always ingest even if the deadline is past — "
-                           "vacancies recur in following years.",
+                           "vacancies recur in following years. Include commission, exam_name, "
+                           "exam_kind and search_aliases when the ad states them so search stays "
+                           "aligned with pathwise-mcp rows.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "data": {
                         "type": "string",
-                        "description": "JSON string like {\"notification\": {\"job_title\": \"...\", \"department\": \"...\", \"total_vacancies\": 5, \"apply_end_date\": \"...\"}, \"posts\": [{\"post_name\": \"...\", \"total_vacancies\": 5}]}"
+                        "description": "JSON string like {\"notification\": {\"job_title\": \"...\", \"department\": \"...\", \"commission\": \"UPSC\", \"exam_name\": \"...\", \"exam_kind\": \"combined_exam|multi_post_ad|single_post|departmental_exam\", \"search_aliases\": [\"upsc\",\"cse\"], \"total_vacancies\": 5, \"apply_end_date\": \"...\"}, \"posts\": [{\"post_name\": \"...\", \"total_vacancies\": 5}]}"
                     }
                 },
                 "required": ["data"],
@@ -712,7 +715,14 @@ def tool_ingest_gov_job(db, data):
         if not notif.get("job_title"):
             return {"error": "notification.job_title is required"}
 
-        # Prepare notification insert
+        notif = backfill_issuer_fields(notif)
+        search_document = build_search_document(notif, posts)
+        exam_kind = (notif.get("exam_kind") or "").strip()
+        if exam_kind not in (
+            "combined_exam", "multi_post_ad", "single_post", "departmental_exam"
+        ):
+            exam_kind = None
+
         nparams = [
             notif.get("job_title"),
             notif.get("department"),
@@ -733,17 +743,40 @@ def tool_ingest_gov_job(db, data):
             notif.get("source", "assistant-ingest"),
             Jsonb(notif.get("translations")) if notif.get("translations") else None,
             Jsonb(notif.get("syllabus")) if notif.get("syllabus") else None,
+            notif.get("commission"),
+            notif.get("state"),
+            notif.get("exam_name"),
+            exam_kind,
+            search_document or None,
         ]
 
-        row = db.execute("""
-            INSERT INTO gov_job_notifications (
-                job_title, department, total_vacancies, reservation_details, nationality,
-                qualification, age_limit, age_relaxation, age_relaxation_details,
-                apply_start_date, apply_end_date, exam_date, advertisement_number,
-                application_fee, official_url, local_pdf_path, source, translations, syllabus
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            RETURNING id
-        """, nparams).fetchone()
+        try:
+            row = db.execute("""
+                INSERT INTO gov_job_notifications (
+                    job_title, department, total_vacancies, reservation_details, nationality,
+                    qualification, age_limit, age_relaxation, age_relaxation_details,
+                    apply_start_date, apply_end_date, exam_date, advertisement_number,
+                    application_fee, official_url, local_pdf_path, source, translations, syllabus,
+                    commission, state, exam_name, exam_kind, search_document
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                RETURNING id
+            """, nparams).fetchone()
+        except Exception as e:
+            if not _is_undefined_column(e):
+                raise
+            try:
+                db.rollback()
+            except Exception:
+                pass
+            row = db.execute("""
+                INSERT INTO gov_job_notifications (
+                    job_title, department, total_vacancies, reservation_details, nationality,
+                    qualification, age_limit, age_relaxation, age_relaxation_details,
+                    apply_start_date, apply_end_date, exam_date, advertisement_number,
+                    application_fee, official_url, local_pdf_path, source, translations, syllabus
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                RETURNING id
+            """, nparams[:19]).fetchone()
         notif_id = row["id"]
 
         for p in posts:

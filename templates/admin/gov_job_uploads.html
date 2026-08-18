@@ -4,10 +4,11 @@
 <div class="max-w-4xl mx-auto px-4 sm:px-6 py-10">
   <h1 class="text-3xl font-extrabold mb-2">Gov job PDFs</h1>
   <p class="text-slate-600 mb-6">
-    Upload an official job notification PDF here to drop it into the <code class="text-xs bg-slate-100 px-1 rounded">pathwise-mcp</code>
-    drop queue (<code>tobepicked/</code>). After an MCP client runs <code>store_notification_pdf</code> + extract + <code>save_job_to_database</code>,
-    the status below will update to "Read by pathwise-mcp" (detected by matching original filename to the <code>local_pdf_path</code> stored in DB).
-    {{ processed_count }} notification{{ '' if processed_count == 1 else 's' }} live so far.
+    Upload an official notification PDF into the shared
+    <code class="text-xs bg-slate-100 px-1 rounded">pathwise-mcp/tobepicked/</code> drop folder.
+    The MCP poller (keep <code class="text-xs bg-slate-100 px-1 rounded">python server.py</code> running
+    in pathwise-mcp) extracts it and writes <code>gov_job_notifications</code> — this app only reads those rows.
+    {{ processed_count }} notification{{ '' if processed_count == 1 else 's' }} in the database.
   </p>
 
   <form method="POST" action="{{ url_for('admin_gov_job_upload') }}" enctype="multipart/form-data"
@@ -26,6 +27,7 @@
           <p class="text-sm text-slate-500">{{ (f.size / 1024 / 1024) | round(1) }} MB</p>
           {% if f.status == 'processed' %}
             <span class="inline-block mt-1 px-2 py-0.5 text-xs rounded bg-green-200 text-green-800 font-semibold">Read by pathwise-mcp ✓</span>
+            {% if f.placeholder %}<span class="inline-block mt-1 px-2 py-0.5 text-xs rounded bg-slate-100 text-slate-600">placeholder left after ingest</span>{% endif %}
             {% for m in f.matches %}
             <div class="mt-1 text-sm">
               → <a href="{{ url_for('gov_job_detail', job_id=m.id) }}" class="text-brand-700 underline hover:text-brand-800">{{ m.job_title }}</a>
@@ -33,7 +35,7 @@
             </div>
             {% endfor %}
           {% else %}
-            <span class="inline-block mt-1 px-2 py-0.5 text-xs rounded bg-amber-100 text-amber-700 font-semibold">Awaiting MCP extraction</span>
+            <span class="inline-block mt-1 px-2 py-0.5 text-xs rounded bg-amber-100 text-amber-700 font-semibold">Awaiting MCP poller</span>
           {% endif %}
         </div>
         <form method="POST" action="{{ url_for('admin_gov_job_pending_delete', filename=f.name) }}"
@@ -46,6 +48,22 @@
   </div>
   {% if not pending %}
   <p class="text-slate-500 text-center py-12">Nothing in drop queue.</p>
+  {% endif %}
+
+  <h2 class="text-lg font-bold mt-10 mb-3">Ingested notifications ({{ processed_count }})</h2>
+  <div class="grid gap-2">
+    {% for j in recent %}
+    <a href="{{ url_for('gov_job_detail', job_id=j.id) }}" class="tap bg-white border border-slate-200 rounded-xl px-4 py-3 flex flex-wrap items-center justify-between gap-2">
+      <div class="min-w-0">
+        <p class="font-semibold truncate">{{ j.display_title }}</p>
+        <p class="text-xs text-slate-500">{{ j.commission or "—" }}{% if j.exam_kind_label %} · {{ j.exam_kind_label }}{% endif %}</p>
+      </div>
+      <span class="text-xs text-slate-400">#{{ j.id }}</span>
+    </a>
+    {% endfor %}
+  </div>
+  {% if not recent %}
+  <p class="text-slate-500 text-sm">No rows in <code>gov_job_notifications</code> yet. Upload a PDF and keep pathwise-mcp running.</p>
   {% endif %}
 </div>
 {% endblock %}

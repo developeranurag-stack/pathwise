@@ -21,6 +21,9 @@ from matching import (
     next_steps_for_profile, gov_job_is_open, gov_job_eligibility, is_national_job,
     RIASEC_QUESTIONS, score_riasec,
 )
+from gov_jobs import (
+    EXAM_KINDS, annotate_job, distinct_commissions, fetch_gov_jobs, related_gov_jobs,
+)
 # assistant is imported lazily inside the /assistant routes so the app can start
 # without the optional 'openai' package (see requirements.txt and AGENTS.md)
 
@@ -28,11 +31,10 @@ app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "dev-secret-key-change-in-production")
 app.config["MAX_CONTENT_LENGTH"] = 32 * 1024 * 1024  # 32MB, generous for a scanned notification PDF
 
-# Drop folder for the sibling pathwise-mcp project (see ../pathwise-mcp/CLAUDE.md) — PDFs placed
-# here are picked up manually (or by instructing an MCP client) for `store_notification_pdf`
-# which copies to stored_pdfs/ then extract + save_job_to_database into gov_job_notifications.
-# We track successful MCP read by matching the original filename stem against stored local_pdf_path.
-# Only works when both projects run on the same host.
+# Drop folder for the sibling pathwise-mcp poller (see ../pathwise-mcp/INTEGRATING.md).
+# Admin uploads land here; the MCP process copies to stored_pdfs/, extracts, and INSERTs.
+# We detect a successful ingest by matching the original filename stem to local_pdf_path.
+# Both projects must share a host (or these volumes) and the same DATABASE_URL.
 GOV_JOB_UPLOAD_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "pathwise-mcp", "tobepicked")
 
 EDUCATION_LEVELS = ["Class 9-10", "Class 11-12", "Undergraduate", "Postgraduate", "Diploma"]
@@ -528,25 +530,7 @@ def career_detail(slug):
     else:
         related_scholarships = db.execute("SELECT * FROM scholarships ORDER BY deadline LIMIT 3").fetchall()
 
-    related_jobs = []
-    tokens = exam_names[:3]
-    if tokens:
-        job_clauses = " OR ".join(
-            ["(COALESCE(exam_name,'') ILIKE ? OR job_title ILIKE ? OR COALESCE(commission,'') ILIKE ?)"]
-            * len(tokens)
-        )
-        params = []
-        for t in tokens:
-            like = f"%{t}%"
-            params.extend([like, like, like])
-        try:
-            related_jobs = db.execute(
-                f"SELECT * FROM gov_job_notifications WHERE {job_clauses} ORDER BY created_at DESC LIMIT 4",
-                params,
-            ).fetchall()
-        except Exception:
-            db.rollback()
-            related_jobs = []
+    related_jobs = [annotate_job(r) for r in related_gov_jobs(db, exam_names, limit=4)]
 
     match_reasons = []
     if profile:
@@ -684,8 +668,8 @@ def toggle_save_scholarship(scholarship_id):
 
 
 # ----------------- ROUTES: GOVERNMENT JOB NOTIFICATIONS -----------------
-# Populated out-of-band by the pathwise-mcp MCP server (see ../pathwise-mcp),
-# which extracts these fields from official PDF notifications. Read-only here.
+# Populated out-of-band by pathwise-mcp (shared Postgres + tobepicked/).
+# This app SELECTs only — see gov_jobs.py and ../pathwise-mcp/INTEGRATING.md.
 
 @app.route("/gov-jobs")
 def gov_jobs_list():
@@ -693,32 +677,10 @@ def gov_jobs_list():
     q = (request.args.get("q") or "").strip()
     commission = (request.args.get("commission") or "").strip()
     state = (request.args.get("state") or "").strip()
+    exam_kind = (request.args.get("exam_kind") or "").strip()
     status = request.args.get("status") or "all"
 
-    clauses, params = [], []
-    if q:
-        clauses.append(
-            "(job_title ILIKE ? OR COALESCE(department,'') ILIKE ? OR COALESCE(exam_name,'') ILIKE ? "
-            "OR COALESCE(commission,'') ILIKE ? OR COALESCE(qualification,'') ILIKE ?)"
-        )
-        like = f"%{q}%"
-        params.extend([like, like, like, like, like])
-    if commission:
-        clauses.append("COALESCE(commission,'') ILIKE ?")
-        params.append(f"%{commission}%")
-    if state:
-        clauses.append("(COALESCE(state,'') ILIKE ? OR COALESCE(department,'') ILIKE ?)")
-        params.extend([f"%{state}%", f"%{state}%"])
-
-    sql = "SELECT * FROM gov_job_notifications"
-    if clauses:
-        sql += " WHERE " + " AND ".join(clauses)
-    sql += " ORDER BY created_at DESC"
-    try:
-        rows = db.execute(sql, params).fetchall()
-    except Exception:
-        db.rollback()
-        rows = db.execute("SELECT * FROM gov_job_notifications ORDER BY created_at DESC").fetchall()
+    rows = fetch_gov_jobs(db, q=q, commission=commission, state=state, exam_kind=exam_kind)
 
     today = datetime.date.today()
     annotated = []
@@ -728,7 +690,7 @@ def gov_jobs_list():
             continue
         if status == "closed" and open_flag is not False:
             continue
-        item = dict(r)
+        item = annotate_job(r)
         item["is_open"] = open_flag
         item["is_national"] = is_national_job(r)
         annotated.append(item)
@@ -740,33 +702,29 @@ def gov_jobs_list():
         ).fetchall()
         saved_ids = {r["notification_id"] for r in saved_rows}
 
-    commissions = []
-    try:
-        commissions = [
-            r["commission"] for r in db.execute(
-                "SELECT DISTINCT commission FROM gov_job_notifications "
-                "WHERE commission IS NOT NULL AND commission <> '' ORDER BY commission"
-            ).fetchall()
-        ]
-    except Exception:
-        db.rollback()
-
     return render_template(
         "gov_jobs_list.html", jobs=annotated, q=q, commission=commission, state=state,
-        status=status, saved_ids=saved_ids, commissions=commissions,
+        exam_kind=exam_kind, exam_kinds=EXAM_KINDS, status=status,
+        saved_ids=saved_ids, commissions=distinct_commissions(db),
     )
 
 
 @app.route("/gov-jobs/<int:job_id>")
 def gov_job_detail(job_id):
     db = get_db()
-    job = db.execute("SELECT * FROM gov_job_notifications WHERE id = ?", (job_id,)).fetchone()
-    if not job:
+    row = db.execute("SELECT * FROM gov_job_notifications WHERE id = ?", (job_id,)).fetchone()
+    if not row:
         flash("Job notification not found.", "error")
         return redirect(url_for("gov_jobs_list"))
     posts = db.execute("SELECT * FROM gov_job_posts WHERE notification_id = ? ORDER BY id", (job_id,)).fetchall()
+    job = annotate_job(row)
+    job["post_count"] = len(posts)
+    if job["exam_kind"] in ("combined_exam", "departmental_exam") and posts:
+        job["posts_badge"] = f"{len(posts)} cadres"
+    elif len(posts) > 1:
+        job["posts_badge"] = f"{len(posts)} posts"
     profile = current_profile()
-    eligibility = gov_job_eligibility(job, profile)
+    eligibility = gov_job_eligibility(row, profile)
     is_saved = False
     if session.get("user_id"):
         is_saved = db.execute(
@@ -779,8 +737,8 @@ def gov_job_detail(job_id):
         hi_tr = translations.get("hi") or translations.get("HI")
     return render_template(
         "gov_job_detail.html", job=job, posts=posts, is_saved=is_saved,
-        eligibility=eligibility, is_open=gov_job_is_open(job), hi_tr=hi_tr,
-        is_national=is_national_job(job),
+        eligibility=eligibility, is_open=gov_job_is_open(row), hi_tr=hi_tr,
+        is_national=is_national_job(row),
     )
 
 
@@ -1073,45 +1031,72 @@ def admin_source_delete(source_id):
     return redirect(url_for("admin_sources_list"))
 
 
+def _ingest_match_stems(local_pdf_path):
+    """Stems MCP may have stored for an uploaded filename."""
+    if not local_pdf_path:
+        return []
+    base = os.path.basename(local_pdf_path)
+    if base.lower().endswith(".pdf"):
+        base = base[:-4]
+    stems = [base]
+    if "_" in base:
+        cand, suf = base.rsplit("_", 1)
+        if suf.isdigit():
+            stems.append(cand)
+    return stems
+
+
 @app.route("/admin/gov-jobs")
 @admin_required
 def admin_gov_jobs_list():
     db = get_db()
-    rows = db.execute(
-        "SELECT id, job_title, local_pdf_path, created_at FROM gov_job_notifications ORDER BY created_at DESC"
-    ).fetchall()
+    try:
+        rows = db.execute(
+            "SELECT id, job_title, exam_name, commission, exam_kind, local_pdf_path, created_at "
+            "FROM gov_job_notifications ORDER BY created_at DESC"
+        ).fetchall()
+    except Exception:
+        db.rollback()
+        rows = db.execute(
+            "SELECT id, job_title, local_pdf_path, created_at "
+            "FROM gov_job_notifications ORDER BY created_at DESC"
+        ).fetchall()
     processed_count = len(rows)
+    recent = [annotate_job(r) for r in rows[:40]]
 
-    # Map original filename stem -> list of matching saved jobs.
-    # MCP's store_notification_pdf renames to {stem}_{mtime_ns}.pdf so we detect by prefix match on the stored copy.
+    # MCP stores stored_pdfs/{stem}_{mtime_ns}.pdf; also match the bare stem.
     ingested = {}
     for r in rows:
-        lp = r["local_pdf_path"] or ""
-        if lp:
-            b = os.path.basename(lp)
-            if b.lower().endswith(".pdf"):
-                noext = b[:-4]
-                if "_" in noext:
-                    cand, suf = noext.rsplit("_", 1)
-                    if suf.isdigit():
-                        ingested.setdefault(cand, []).append(
-                            {"id": r["id"], "job_title": r["job_title"], "created_at": str(r["created_at"])[:19]}
-                        )
+        match = {
+            "id": r["id"],
+            "job_title": r["exam_name"] or r["job_title"],
+            "created_at": str(r["created_at"])[:19],
+        }
+        for stem in _ingest_match_stems(r["local_pdf_path"]):
+            ingested.setdefault(stem, []).append(match)
 
     pending = []
-    if os.path.isdir(GOV_JOB_UPLOAD_DIR):
+    mcp_running_hint = os.path.isdir(GOV_JOB_UPLOAD_DIR)
+    if mcp_running_hint:
         for name in sorted(os.listdir(GOV_JOB_UPLOAD_DIR)):
             path = os.path.join(GOV_JOB_UPLOAD_DIR, name)
             if os.path.isfile(path):
                 stem = os.path.splitext(name)[0]
                 matches = ingested.get(stem, [])
+                size = os.path.getsize(path)
                 pending.append({
                     "name": name,
-                    "size": os.path.getsize(path),
+                    "size": size,
+                    "placeholder": size == 0,
                     "status": "processed" if matches else "pending",
                     "matches": matches,
                 })
-    return render_template("admin/gov_job_uploads.html", pending=pending, processed_count=processed_count)
+    return render_template(
+        "admin/gov_job_uploads.html",
+        pending=pending,
+        processed_count=processed_count,
+        recent=recent,
+    )
 
 
 @app.route("/admin/gov-jobs/upload", methods=["POST"])
@@ -1134,7 +1119,11 @@ def admin_gov_job_upload():
         dest = os.path.join(GOV_JOB_UPLOAD_DIR, f"{stem}_{now_iso().replace(':', '').replace('-', '')}{ext}")
     file.save(dest)
 
-    flash(f'"{filename}" uploaded to drop dir. Refresh /admin/gov-jobs to see if pathwise-mcp has read it (status changes to processed when a matching job appears in DB).', "success")
+    flash(
+        f'"{filename}" queued in tobepicked/. Keep pathwise-mcp running — the poller extracts it '
+        "into the shared database within a few seconds.",
+        "success",
+    )
     return redirect(url_for("admin_gov_jobs_list"))
 
 
@@ -1169,12 +1158,15 @@ def _dashboard_payload(db, user_id, profile):
         (user_id,),
     ).fetchall()
 
-    saved_jobs = db.execute(
-        """SELECT n.* FROM gov_job_notifications n
-           JOIN saved_gov_jobs sg ON sg.notification_id = n.id
-           WHERE sg.user_id = ? ORDER BY n.apply_end_date""",
-        (user_id,),
-    ).fetchall()
+    saved_jobs = [
+        annotate_job(r)
+        for r in db.execute(
+            """SELECT n.* FROM gov_job_notifications n
+               JOIN saved_gov_jobs sg ON sg.notification_id = n.id
+               WHERE sg.user_id = ? ORDER BY n.apply_end_date""",
+            (user_id,),
+        ).fetchall()
+    ]
 
     recommended_careers = recommended_career_rows(profile, db, limit=6) if profile else []
     matched_scholarships = []
@@ -1200,7 +1192,7 @@ def _dashboard_payload(db, user_id, profile):
     for j in saved_jobs:
         d = parse_flexible_date(j.get("apply_end_date"))
         if d:
-            deadlines.append({"kind": "gov_job", "name": j.get("exam_name") or j["job_title"],
+            deadlines.append({"kind": "gov_job", "name": j.get("display_title") or j.get("exam_name") or j["job_title"],
                               "date": d, "href": url_for("gov_job_detail", job_id=j["id"]),
                               "closed": d < today})
     if profile:

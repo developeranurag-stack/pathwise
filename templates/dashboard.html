@@ -145,7 +145,7 @@
     <div class="space-y-3">
       {% for j in saved_jobs %}
       <a href="{{ url_for('gov_job_detail', job_id=j.id) }}" class="tap block bg-white border border-slate-200 rounded-xl p-4">
-        <div class="font-semibold">{{ j.exam_name or j.job_title }}</div>
+        <div class="font-semibold">{{ j.display_title or j.exam_name or j.job_title }}</div>
         <div class="text-xs text-slate-500">{{ j.commission or j.department }} · {{ j.apply_end_date or '' }}</div>
       </a>
       {% endfor %}
