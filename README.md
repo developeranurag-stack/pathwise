@@ -1,16 +1,21 @@
 # PathWise India (MVP)
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![CI](https://github.com/developeranurag-stack/pathwise/actions/workflows/ci.yml/badge.svg)](https://github.com/developeranurag-stack/pathwise/actions/workflows/ci.yml)
+
 Discover your future. Find the funding to reach it.
 
-An MVP covering the PathWise journey: profile + interest quiz, career explorer
-(with search, compare, verified vs placeholder data), education path and exam
-calendar (Step 3), scholarship matching with reasons, government job
-notifications, a save/checklist roadmap, and a Hindi-first assistant.
-Payments and school/counselor dashboards are out of scope.
+Open-source career and scholarship guidance for Indian students. The app covers
+profile + interest quiz, a career explorer (search, compare, verified vs
+placeholder data), education path and exam calendar, scholarship matching with
+reasons, government job notifications, a save/checklist roadmap, and a
+Hindi-first assistant. Payments and school/counselor dashboards are out of
+scope.
 
 ## Stack
 
-Flask + Postgres (Neon), server-rendered Jinja templates, Tailwind via CDN.
+Flask + Postgres, server-rendered Jinja templates, Tailwind via CDN. No
+frontend build step.
 
 ## Database schema
 
@@ -144,20 +149,37 @@ read by any current route or template — omitted above to keep the diagram legi
 
 ## Run locally
 
-```
+Python 3.11+ and Postgres are required.
+
+```bash
+git clone https://github.com/developeranurag-stack/pathwise.git
+cd pathwise
 python -m venv venv
-./venv/Scripts/pip install -r requirements.txt   # venv/bin/pip on macOS/Linux
+source venv/bin/activate          # Windows: venv\Scripts\activate
+pip install -r requirements.txt
+cp .env.example .env
 ```
 
-Copy `.env.example` to `.env` and fill in `DATABASE_URL` with your Postgres connection string
-(e.g. a Neon connection string).
+Start a local Postgres with Docker (user/password/db are all `pathwise`):
 
-```
-./venv/Scripts/python main.py                     # venv/bin/python on macOS/Linux
+```bash
+docker compose up -d
 ```
 
-Visit http://127.0.0.1:5000. The schema (`schema.sql`) and seed data (careers, scholarships)
-are created automatically on first run against an empty database, from `seed_data.py`.
+Or point `DATABASE_URL` in `.env` at any Postgres instance (Neon works). Set a
+real `SECRET_KEY`. `OPENROUTER_API_KEY` is optional and only needed for
+`/assistant`.
+
+```bash
+python main.py
+```
+
+Visit http://127.0.0.1:5000. Schema (`schema.sql`) and seed data (careers,
+scholarships) are created automatically on first run against an empty database.
+
+Government-job PDF ingestion is optional and lives in the sibling
+[pathwise-mcp](https://github.com/developeranurag-stack/pathwise-mcp) project.
+Copy `.mcp.json.example` to `.mcp.json` if you run that MCP server locally.
 
 ## Demo user (staging)
 
@@ -200,3 +222,22 @@ school/counselor (B2B) dashboards, a full college database.
 
 Scholarship data is illustrative for demo purposes — verify current eligibility
 and deadlines on official portals before applying.
+
+## Tests
+
+```bash
+pip install pytest
+python -m pytest tests/ -q
+```
+
+No database is required for the test suite.
+
+## Contributing
+
+Bug reports, data corrections with citations, and small patches are welcome.
+See [CONTRIBUTING.md](CONTRIBUTING.md) and the [Code of Conduct](CODE_OF_CONDUCT.md).
+Please report vulnerabilities privately as described in [SECURITY.md](SECURITY.md).
+
+## License
+
+[MIT](LICENSE) © 2026 Anurag Prem Soni

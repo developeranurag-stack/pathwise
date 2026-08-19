@@ -1,8 +1,0 @@
-{
-  "mcpServers": {
-    "pathwise-mcp": {
-      "command": "/home/anuragpremsoni/webappprojects/pathwise-mcp/.venv/bin/python",
-      "args": ["/home/anuragpremsoni/webappprojects/pathwise-mcp/server.py"]
-    }
-  }
-}
